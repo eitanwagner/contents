@@ -11,59 +11,20 @@ import json
 import tqdm
 import sys
 import pandas as pd
-# dev = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
 dev = "cuda" if torch.cuda.is_available() else torch.device("cpu")
 
+from utils import parse_args
+args = parse_args()
 
-# def log_rel_entr(x, y):
-#     return x + np.log(x - y)
-# def log_entr(x):
-#     return x + np.log(-x)
-#
-# def log_entropy(pk, qk=None):
-#     pk = np.asarray(pk)
-#     pk = 1.0 * pk - logsumexp(pk, axis=0, keepdims=True)
-#     if qk is None:
-#         vec = log_entr(pk)
-#     else:
-#         qk = np.asarray(qk)
-#         qk = 1.0*qk - logsumexp(qk, axis=0, keepdims=True)
-#         vec = log_rel_entr(pk, qk)
-#     S = logsumexp(vec, axis=0)
-#     # if base is not None:
-#     #     S /= np.log(base)
-#     return S
 
+# ***************************
 
 def H(x):
     """ Entropy from logits"""
     b = F.softmax(x, dim=-1) * F.log_softmax(x, dim=-1)
     b = -1.0 * b.sum()
     return b
-
-def T5_joint():
-    from transformers import T5Tokenizer, T5ForConditionalGeneration
-    tokenizer = T5Tokenizer.from_pretrained("t5-small")
-    model = T5ForConditionalGeneration.from_pretrained("t5-small")
-    pair = ("dog", "black")
-    orders = [(0, 1), (1, 0)]
-    for order in orders:
-        input_ids = tokenizer("The <extra_id_0> is <extra_id_1>.", return_tensors="pt").input_ids
-        labels = tokenizer(
-            f"<extra_id_{order[0]}> {pair[order[0]]} <extra_id_{order[1]}> {pair[order[1]]} <extra_id_2>",
-            return_tensors="pt").input_ids
-        # the forward function automatically creates the correct decoder_input_ids
-        with torch.no_grad():
-            out = model(input_ids=input_ids, labels=labels)  # is this enough or should we look at the logits??
-        loss = out.loss
-        print(labels[0].numpy())
-        logits = out.logits[0].log_softmax(dim=1).numpy()
-        print(logits.shape)
-        print(logits[np.arange(len(labels)), labels])
-        print(np.mean(logits[np.arange(len(labels)), labels]))
-        print(order)
-        print(loss.item())
-
 
 def _nonadjacent_mask_filling(model=None, tokenizer=None, w1=None, w2=None, batch_size=1):
     """
@@ -275,109 +236,6 @@ def _adjacent_mask_filling(model=None, model2=None, tokenizer=None, w1=None, w2=
             _scores1[:, t_i] = scores["w1 first"]
             _scores2[:, t_i] = scores["w2 first"]
     return scores if not temperature_list else (_scores1, _scores2)
-
-
-def test_T5():
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/sorted_noun_list.json', 'r') as f:
-        all_nouns = json.load(f)
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/sorted_adj_list.json', 'r') as f:
-        all_adjs = json.load(f)
-
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores_w1.npy', 'rb') as f:
-        all_scores_w1 = np.load(f)
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores_w2.npy', 'rb') as f:
-        all_scores_w2 = np.load(f)
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores_i.npy', 'rb') as f:
-        all_scores_i = np.load(f)
-    calculated_nouns = list(set(all_nouns[:10000]))
-
-    l = []
-    l2 = []
-    num_intervals = 50
-    i_step, j_step = 10000 // num_intervals, 5000 // num_intervals
-    for i, j in zip(range(0, 10000, i_step), range(0, 5000, j_step)):
-        diffs = all_scores_w1[i:i + i_step, j:j + j_step] - all_scores_w2[i:i + i_step, j:j + j_step]
-        arr2 = all_scores_w2[i:i + i_step, j:j + j_step]
-        np.random.shuffle(arr2)
-        diffs2 = all_scores_w1[i:i + i_step, j:j + j_step] - arr2
-        l.append(np.mean(np.abs(diffs)))
-        l2.append(np.mean(np.abs(diffs2)))
-    print(l)
-    print(l2)
-    return
-
-
-def T5_mask_filling(noun_count=None, adj_count=None, batch_size=1, adjacent=False, size="small", template="good",
-                    random=False, topics=False, temperature=None, temperature_list=False, single_token=False,
-                    version=""):
-    from nltk.corpus import wordnet as wn
-    all_nouns1 = set([word for synset in wn.all_synsets('n') for word in synset.lemma_names()])
-    all_adjs1 = set([word for synset in wn.all_synsets('a') for word in synset.lemma_names()])
-    all_verbs1 = set([word for synset in wn.all_synsets('v') for word in synset.lemma_names()])
-
-    print("all nouns: ", len(all_nouns1))
-    print("all adjs: ", len(all_adjs1))
-    all_nouns = all_nouns1 - all_adjs1 - all_verbs1
-    all_adjs = all_adjs1 - all_nouns1 - all_verbs1
-    # all_nouns = [n for n in all_nouns if (not n[0].isupper() and not n.find("_") > -1 and not n.find("-") > -1)]
-    all_nouns1, all_adjs1, all_verbs1 = None, None, None
-    all_nouns = [n for n in all_nouns if (not n[0].isupper() and n.isalpha() and len(n) >= 3)]
-    # all_adjs = [a for a in all_adjs if (not a[0].isupper() and not a.find("_") > -1 and not a.find("-") > -1)]
-    all_adjs = [a for a in all_adjs if (not a[0].isupper() and a.isalpha())]
-
-    # all_nouns, all_adjs = list(all_nouns1), list(all_adjs1)
-    all_nouns, all_adjs = list(all_nouns), list(all_adjs)
-    # all_nouns = all_nouns[:len(all_nouns)//4]
-    # all_adjs = all_adjs[:len(all_adjs)//4]
-    print("all nouns: ", len(all_nouns))
-    print("all adjs: ", len(all_adjs))
-
-    freq_dict = make_freq()
-    all_nouns.sort(key=lambda w: freq_dict.get(w, 0), reverse=True)
-    all_adjs.sort(key=lambda w: freq_dict.get(w, 0), reverse=True)
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/sorted_noun_list1.json', 'w') as outfile:
-        json.dump(all_nouns, outfile)
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/sorted_adj_list1.json', 'w') as outfile:
-        json.dump(all_adjs, outfile)
-
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/sorted_noun_list1.json', 'r') as f:
-        all_nouns = json.load(f)
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/sorted_adj_list1.json', 'r') as f:
-        all_adjs = json.load(f)
-
-    if noun_count is None:
-        noun_count = len(all_nouns)
-    if adj_count is None:
-        adj_count = len(all_adjs)
-
-    def probs_for_word(w, tokenizer, psi):
-        tokens = tokenizer(w)["input_ids"][:-1]
-        probs = [np.prod(p[tokens]) for p in psi]
-        # we need all probs
-        # i = np.argmax(probs)
-        return np.log(probs)
-
-    noun_topics, adj_topics, psi = None, None, None
-    if topics:
-        from configs import LDAConfig
-        from lda import LDAModel
-        config_file = "/cs/snapless/oabend/eitan.wagner/segmentation/configs/wikitext_lda_config.json"
-        config = LDAConfig.from_json_file(config_file)
-        lda = LDAModel(config, build=False)
-        psi = lda.get_psi_matrix()
-        tokens = lda.get_dictionary().token2id.keys()
-        idx = lda.tokenizer.tokenizer.convert_tokens_to_ids(tokens)
-        with torch.no_grad():
-            tokenizer = T5Tokenizer.from_pretrained(f"t5-{size}")
-        noun_topics = np.array([probs_for_word(w, tokenizer, psi) for w in all_nouns])
-        adj_topics = np.array([probs_for_word(w, tokenizer, psi) for w in all_adjs])
-        # noun_topics = torch.tensor([topic_for_word(w, tokenizer, psi) for w in all_nouns]).log().unsqueeze(-1)
-        # adj_topics = torch.tensor([topic_for_word(w, tokenizer, psi) for w in all_adjs]).log().unsqueeze(-1)
-
-    return _mask_filling(all_nouns, all_adjs, batch_size, noun_count, adj_count, adjacent=adjacent,
-                         size=size, template=template, random=random, noun_topics=noun_topics, adj_topics=adj_topics,
-                         psi=psi, temperature=temperature, temperature_list=temperature_list, single_token=single_token,
-                         version=version)
 
 
 def _mask_filling(all_nouns, all_adjs, batch_size, noun_count, adj_count, adjacent=False, size="small", template="good",
@@ -741,7 +599,7 @@ def _mask_filling(all_nouns, all_adjs, batch_size, noun_count, adj_count, adjace
 
 def make_freq():
     # from: https://github.com/hermitdave/FrequencyWords/blob/master/content/2018/en/en_full.txt
-    with open('/cs/snapless/oabend/eitan.wagner/segmentation/en_full.txt', 'r') as infile:
+    with open(args.path + 'en_full.txt', 'r') as infile:
         lines = infile.readlines()
     freq_dict = {l.split()[0]: int(l.split()[1]) for l in lines}
     return freq_dict
@@ -792,13 +650,12 @@ def make_extra_noise(length=50, num_samples=1000):
     import string
     import random
     print(f"Making extra noise. {num_samples} texts.")
-    if "load" in sys.argv:
+    if args.load:
         print('Loading data')
         with open(f'/cs/snapless/oabend/eitan.wagner/calibration/_extra_noise.json', 'r') as f:
             texts = json.load(f)[:num_samples]
     else:
         characters = string.ascii_letters + string.digits + string.punctuation
-        # np.random.choice(characters, size=(num_samples, length))
         texts = [''.join(random.choice(characters) for i in range(length)) for _ in range(num_samples)]
         with open(f'/cs/snapless/oabend/eitan.wagner/calibration/_extra_noise.json', 'w') as f:
             json.dump(texts, f)
@@ -812,7 +669,7 @@ def make_total_noise(tokenizer, length=20, num_samples=1000):
     :return:
     """
     print(f"Making total noise. {num_samples} texts.")
-    if "load" in sys.argv:
+    if args.load:
         print('Loading data')
         with open(f'/cs/snapless/oabend/eitan.wagner/calibration/_total_noise.json', 'r') as f:
             texts = json.load(f)[:num_samples]
@@ -831,10 +688,10 @@ def make_synthetic(template=" <NP> is a thing", tokenizer=None, noise=False, num
     from datasets import load_dataset
     import spacy
 
-    if "only_make" in sys.argv:
+    if args.only_make:
         num_samples = 50000
 
-    if "--template" in sys.argv:
+    if args.template:
         template = sys.argv[sys.argv.index("--template") + 1]
 
     print(f"Making synthetic data. {num_samples} texts.")
@@ -843,7 +700,7 @@ def make_synthetic(template=" <NP> is a thing", tokenizer=None, noise=False, num
     inserted_id = tokenizer(" <NP>")['input_ids'][1]
     # inserted_id = 28696
     # obtain list of two-word noun-phrases
-    if "load" in sys.argv:
+    if args.load:
         if "common" in sys.argv:
             print('Loading data - common NPs')
             with open(
@@ -912,6 +769,8 @@ def make_synthetic(template=" <NP> is a thing", tokenizer=None, noise=False, num
             json.dump(pairs, f)
 
     return [template.replace("<NP>", p).strip() for p in pairs], tokenizer(template)['input_ids'].index(inserted_id)
+
+# ***************
 
 def on_data_calibration(dataset_name='wikitext-2', size="small", version="", return_tokenizer=False, tokenizer=None):
     """
@@ -2629,6 +2488,7 @@ def llama_pair_probabilities(texts, model, tokenizer, fixed_pos=None, return_pro
         return np.array(probs), np.array(ids)
     return l
 
+
 def mlm_pair_probabilities(texts, model, tokenizer, temperature=1., deps=False, deps2=False, fixed_pos=None,
                            return_probs=False):
     """
@@ -2791,6 +2651,7 @@ def mlm_pair_probabilities(texts, model, tokenizer, temperature=1., deps=False, 
         return np.array(probs), np.array(ids)
     return l
 
+
 def in_nucleus(logits, i, p=0.95):
     probs = logits.softmax(dim=-1)
     sorted_probs, indices = torch.sort(probs, dim=-1, descending=True)
@@ -2799,10 +2660,12 @@ def in_nucleus(logits, i, p=0.95):
     nucleus = cum_sum_probs < p
     return i in indices[sum(nucleus)]
 
+
 def to_bin(p):
     from bisect import bisect
     intervals = [0, 0.25, 0.5, 1, 2, 3, 5, 7.5, 10, 15, 20, 30, 40, 50, 75, 100, 125, 150]
     return intervals[bisect(intervals, p)-1]
+
 
 def boxplot(name="", ylim=None, bins=None, dataset="wikitext-2", by_prob=False):
     # box plot of absolute log-distance
@@ -2858,378 +2721,6 @@ def boxplot(name="", ylim=None, bins=None, dataset="wikitext-2", by_prob=False):
     dfg.plot()
     plt.show()
 
-def mask_filling():
-    import torch
-    # from transformers import BartTokenizerFast, BartForConditionalGeneration
-    # tokenizer = BartTokenizerFast.from_pretrained("facebook/bart-base")
-    # model = BartForConditionalGeneration.from_pretrained("facebook/bart-base")
-    from transformers import RobertaTokenizerFast, RobertaForMaskedLM
-
-    tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
-    model = RobertaForMaskedLM.from_pretrained("roberta-base")
-    # TXT = "My friends are <mask> but they eat too many carbs."
-
-    # for t, i in tokenizer.vocab.items():
-    pair = ("dog", "black")
-    TXT = "The <mask> is <mask>."
-    TXT1 = f"The {pair[0]} is <mask>."
-    TXT2 = f"The <mask> is {pair[1]}."
-    TXT3 = f"The {pair[0]} is {pair[1]}."
-    # TXT = f"My friends are <mask> t"
-    inputs = tokenizer([TXT], return_tensors="pt")
-    inputs1 = tokenizer([TXT1], return_tensors="pt")
-    inputs2 = tokenizer([TXT2], return_tensors="pt")
-    inputs3 = tokenizer([TXT3], return_tensors="pt")
-    print(inputs["input_ids"][0])
-    print(inputs1["input_ids"][0])
-    print(inputs2["input_ids"][0])
-    print(inputs3["input_ids"][0])
-
-    with torch.no_grad():
-        logits = model(**inputs).logits
-        logits1 = model(**inputs1).logits
-        logits2 = model(**inputs2).logits
-        logits3 = model(**inputs3).logits
-
-    masked_index = (inputs.input_ids == tokenizer.mask_token_id)[0].nonzero(as_tuple=True)[0]
-    masked_index1 = (inputs1.input_ids == tokenizer.mask_token_id)[0].nonzero(as_tuple=True)[0]
-    masked_index2 = (inputs2.input_ids == tokenizer.mask_token_id)[0].nonzero(as_tuple=True)[0]
-    masked_index3 = (inputs3.input_ids == tokenizer.mask_token_id)[0].nonzero(as_tuple=True)[0]
-    print(masked_index)
-    print(masked_index1)
-    print(masked_index2)
-    print(masked_index3)
-
-    probs = logits[0, masked_index].log_softmax(dim=1)
-    probs1 = logits1[0, masked_index].log_softmax(dim=1)
-    probs2 = logits2[0, masked_index].log_softmax(dim=1)
-    probs3 = logits3[0, masked_index].log_softmax(dim=1)
-    print(probs[0, [2335, 909]].sum())
-    print(probs1[0, [2335, 909]].sum())
-    print(probs2[0, [2335, 909]].sum())
-    print(probs3[0, [2335, 909]].sum())
-    print(probs[0, [2335, 909]][0] + probs1[0, [2335, 909]][1])
-    print(probs[0, [2335, 909]][1] + probs2[0, [2335, 909]][0])
-
-    values, predictions = probs.topk(5)
-
-
-def causal_lm():
-    import torch
-    import numpy as np
-    # from transformers import BartTokenizerFast, BartForCausalLM
-    # tokenizer = BartTokenizerFast.from_pretrained("facebook/bart-base")
-    # model = BartForCausalLM.from_pretrained("facebook/bart-base", add_cross_attention=False)
-    # assert model.config.is_decoder, f"{model.__class__} has to be configured as a decoder."
-
-    from transformers import RobertaTokenizerFast, RobertaForCausalLM, RobertaConfig
-    tokenizer = RobertaTokenizerFast.from_pretrained("roberta-base")
-    config = RobertaConfig.from_pretrained("roberta-base")
-    config.is_decoder = True
-    model = RobertaForCausalLM.from_pretrained("roberta-base", config=config)
-    # model = RobertaForCausalLM.from_pretrained("roberta-base")
-
-    # probs = np.zeros((len(tokenizer.decoder)))
-    # probs = torch.zeros(len(tokenizer.vocab))
-    # for i, t in tokenizer.decoder.items():
-    # for t, i in tokenizer.vocab.items():
-    TXT = "My friends are <mask> fat"
-    # fat_id = tokenizer.encoder["fat"]
-    # fat_id = tokenizer.vocab["fat"]
-    # inputs = tokenizer("Hello, my dog is cute", return_tensors="pt")
-
-    input_ids = tokenizer([TXT], return_tensors="pt")["input_ids"]
-    with torch.no_grad():
-        logits = model(input_ids).logits
-    masked_index = (input_ids[0] == tokenizer.mask_token_id).nonzero().item()
-    probs = logits[0, masked_index].softmax(dim=0)
-
-    # prob = logits[0, [5, 6]].softmax(dim=0)
-    # probs[i] = prob[[0,1], [i, fat_id]].sum().item()
-
-    values, predictions = probs.topk(5)
-    print(tokenizer.decode(predictions).split())
-    print(values)
-
-    return probs
-
-    # expected_shape = [1, inputs.input_ids.shape[-1], model.config.vocab_size]
-    # list(logits.shape) == expected_shape
-
-
-def make_imdb_texts():
-    from datasets import load_dataset
-    imdb = load_dataset("imdb")
-
-    for _pos in ["all", "pos", "neg"]:
-        train_path = f'/cs/snapless/oabend/eitan.wagner/segmentation/data/imdb/train_text_{_pos}'
-        test_path = f'/cs/snapless/oabend/eitan.wagner/segmentation/data/imdb/val_text_{_pos}'
-
-        if _pos == "all":
-            train_lines = [_t['text'] for _t in imdb['train']]
-            test_lines = [_t['text'] for _t in imdb['test']]
-        elif _pos == "pos":
-            train_lines = [_t['text'] for _t in imdb['train'] if _t['label'] == 1]
-            test_lines = [_t['text'] for _t in imdb['test'] if _t['label'] == 1]
-        else:
-            train_lines = [_t['text'] for _t in imdb['train'] if _t['label'] == 0]
-            test_lines = [_t['text'] for _t in imdb['test'] if _t['label'] == 0]
-
-        with open(train_path, 'w') as f:
-            f.write('\n\n'.join(train_lines))
-        with open(test_path, 'w') as f:
-            f.write('\n\n'.join(test_lines))
-
-
-def train_gpt2_imdb(pos='all', classification=False, pretrained=False, size="", batch_size=16):
-    from transformers import AutoTokenizer, GPT2Config, GPT2LMHeadModel, GPT2ForSequenceClassification
-    if pretrained:
-        from transformers import GPT2AdapterModel, AdapterTrainer
-
-    tokenizer = AutoTokenizer.from_pretrained(f"gpt2{size}", cache_dir='/cs/snapless/oabend/eitan.wagner/cache/')
-    tokenizer.pad_token = tokenizer.eos_token
-
-    if not classification:
-        if not pretrained:
-            configuration = GPT2Config()
-            model = GPT2LMHeadModel(config=configuration)
-        else:
-            model = GPT2AdapterModel.from_pretrained(f"gpt2{size}", cache_dir='/cs/snapless/oabend/eitan.wagner/cache/')
-            # Add a new adapter
-            model.add_adapter(f"imdb-{pos}")
-            # Add a matching classification head
-            model.add_causal_lm_head(f"imdb-{pos}")
-            # Activate the adapter
-            model.train_adapter(f"imdb-{pos}")
-
-            # model = GPT2LMHeadModel.from_pretrained("gpt2", cache_dir='/cs/snapless/oabend/eitan.wagner/cache/')
-
-        train_path = f'/cs/snapless/oabend/eitan.wagner/segmentation/data/imdb/train_text_{pos}'
-        test_path = f'/cs/snapless/oabend/eitan.wagner/segmentation/data/imdb/val_text_{pos}'
-
-        from transformers import TextDataset, DataCollatorForLanguageModeling
-
-        def load_dataset(train_path, test_path, tokenizer):
-            train_dataset = TextDataset(
-                tokenizer=tokenizer,
-                file_path=train_path,
-                block_size=128)
-
-            test_dataset = TextDataset(
-                tokenizer=tokenizer,
-                file_path=test_path,
-                block_size=128)
-
-            data_collator = DataCollatorForLanguageModeling(
-                tokenizer=tokenizer, mlm=False,
-            )
-            return train_dataset, test_dataset, data_collator
-
-        train_dataset, test_dataset, data_collator = load_dataset(train_path, test_path, tokenizer)
-
-    if classification:
-        pos = "classification"
-        from datasets import load_dataset, load_metric
-        metric = load_metric("accuracy")
-
-        def compute_metrics(eval_pred):
-            logits, labels = eval_pred
-            predictions = np.argmax(logits, axis=-1)
-            return metric.compute(predictions=predictions, references=labels)
-
-        if not pretrained:
-            configuration = GPT2Config()
-            configuration.num_labels = 2
-            configuration.problem_type = "single_label_classification"
-            model = GPT2ForSequenceClassification(config=configuration)
-            model.config.pad_token_id = model.config.eos_token_id
-        else:
-            model = GPT2AdapterModel.from_pretrained(f"gpt2{size}", cache_dir='/cs/snapless/oabend/eitan.wagner/cache/')
-            model.add_adapter("imdb-clf")
-            model.add_classification_head("imdb-clf", num_labels=2)
-            model.train_adapter("imdb-clf")
-
-        imdb = load_dataset("imdb")
-        from transformers import TextDataset
-
-        def preprocess_function(examples):
-            return tokenizer(examples["text"], truncation=True, padding="max_length")
-
-        tokenized_imdb = imdb.map(preprocess_function, batched=True)
-
-        train_dataset, test_dataset = tokenized_imdb["train"], tokenized_imdb["test"]
-
-    from transformers import Trainer, TrainingArguments
-
-    training_args = TrainingArguments(
-        output_dir=f"/cs/snapless/oabend/eitan.wagner/segmentation/models/imdb/gpt2{'-' + pos if not pretrained else ''}",
-        # The output directory
-        overwrite_output_dir=True,  # overwrite the content of the output directory
-        num_train_epochs=5 if not pretrained else 6,  # number of training epochs
-        gradient_accumulation_steps=4 if not classification else 4,
-        per_device_train_batch_size=batch_size,  # batch size for training
-        learning_rate=5e-5 if not pretrained else 1e-4,
-        per_device_eval_batch_size=batch_size * 2,  # batch size for evaluation
-        eval_steps=400,  # Number of update steps between two evaluations.
-        save_steps=10000,  # after # steps model is saved
-        warmup_steps=500,  # number of warmup steps for learning rate scheduler
-        prediction_loss_only=True,
-        logging_steps=10,
-        evaluation_strategy="epoch",
-    )
-
-    if not pretrained:
-        _Trainer = Trainer
-    else:
-        _Trainer = AdapterTrainer
-    if not classification:
-        trainer = _Trainer(
-            model=model,
-            args=training_args,
-            data_collator=data_collator,
-            train_dataset=train_dataset,
-            eval_dataset=test_dataset,
-        )
-    else:
-        trainer = _Trainer(
-            model=model,
-            args=training_args,
-            train_dataset=train_dataset,
-            eval_dataset=test_dataset,
-            compute_metrics=compute_metrics,
-        )
-
-    trainer.train()
-    print("Evaluation:")
-    print(trainer.evaluate())
-
-    # trainer.save_model()
-    if pretrained:
-        model.save_adapter(f"/cs/snapless/oabend/eitan.wagner/segmentation/models/imdb-adapters{size}/"
-                           + (f"imdb-{pos}" if not classification else "imdb-clf"),
-                           f"imdb-{pos}" if not classification else "imdb-clf")
-
-
-def test_gpt2_imdb(pretrained=False, size=""):
-    from transformers import GPT2Tokenizer, GPT2LMHeadModel, GPT2ForSequenceClassification
-
-    tokenizer = GPT2Tokenizer.from_pretrained(f"gpt2{size}", cache_dir='/cs/snapless/oabend/eitan.wagner/cache/')
-    tokenizer.pad_token = tokenizer.eos_token
-
-    if not pretrained:
-        model_all = GPT2LMHeadModel.from_pretrained(
-            f"/cs/snapless/oabend/eitan.wagner/segmentation/models/imdb/gpt2-all{'_pt' if pretrained else ''}",
-            cache_dir='/cs/snapless/oabend/eitan.wagner/cache/').to(dev)
-        model_pos = GPT2LMHeadModel.from_pretrained(
-            f"/cs/snapless/oabend/eitan.wagner/segmentation/models/imdb/gpt2-pos{'_pt' if pretrained else ''}",
-            cache_dir='/cs/snapless/oabend/eitan.wagner/cache/').to(dev)
-        model_neg = GPT2LMHeadModel.from_pretrained(
-            f"/cs/snapless/oabend/eitan.wagner/segmentation/models/imdb/gpt2-neg{'_pt' if pretrained else ''}",
-            cache_dir='/cs/snapless/oabend/eitan.wagner/cache/').to(dev)
-    # model_clf = GPT2ForSequenceClassification.from_pretrained(f"/cs/snapless/oabend/eitan.wagner/segmentation/models/imdb/gpt2-classifier",
-    #                                         cache_dir='/cs/snapless/oabend/eitan.wagner/cache/').to(dev)
-    else:
-        from transformers import GPT2AdapterModel, AdapterTrainer
-        # model = GPT2ModelWithHeads.from_pretrained(f"/cs/snapless/oabend/eitan.wagner/segmentation/models/imdb/gpt2",
-        model = GPT2AdapterModel.from_pretrained(f"gpt2{size}", cache_dir='/cs/snapless/oabend/eitan.wagner/cache/')
-
-        names = ['imdb-all', 'imdb-pos', 'imdb-neg', 'imdb-clf']
-        path = f"/cs/snapless/oabend/eitan.wagner/segmentation/models/imdb-adapters{size}/"
-        adapter_names = [model.load_adapter(path + n, model_name=f"gpt2{size}") for n in names]
-        model.to(dev)
-
-    from datasets import load_dataset
-    imdb = load_dataset("imdb")
-    from transformers import TextDataset
-
-    def preprocess_function(examples):
-        return tokenizer(examples["text"], truncation=True, padding="max_length")
-
-    tokenized_imdb = imdb.map(preprocess_function, batched=True)
-
-    train_dataset, test_dataset = tokenized_imdb["train"], tokenized_imdb["test"]
-
-    # sent = "my name is"
-    # inputs = tokenizer(sent, return_tensors="pt")
-    # print(inputs['input_ids'].shape)
-    # test_len = 5
-    test_len = len(tokenized_imdb["test"])
-    total_probs, probs = np.zeros(test_len), np.zeros(test_len)
-    pos_probs, neg_probs = np.zeros(test_len), np.zeros(test_len)
-    test_dataset = test_dataset[:test_len]
-    for i, inputs in enumerate(test_dataset['input_ids']):
-        # continue
-        inputs = torch.LongTensor(inputs).unsqueeze(0)
-
-        # inputs = torch.LongTensor(test_dataset[0]["input_ids"]).unsqueeze(0)
-        inputs = inputs.to(dev)
-
-        if not pretrained:
-            # pos_prob = -model_pos(input_ids=inputs, labels=inputs)['loss'].detach().cpu().item() * inputs.shape[1]
-            pos_prob = -model_pos(input_ids=inputs, labels=inputs)['loss'].detach().cpu().item() \
-                       * sum(test_dataset['attention_mask'][i])
-            # pos_prob = model_pos(input_ids=inputs['input_ids'], labels=inputs['input_ids'])['loss'].detach().cpu().item() * inputs['input_ids'].shape[1]
-            neg_prob = -model_neg(input_ids=inputs, labels=inputs)['loss'].detach().cpu().item() \
-                       * sum(test_dataset['attention_mask'][i])
-            # neg_prob = model_neg(input_ids=inputs['input_ids'], labels=inputs['input_ids'])['loss'].detach().cpu().item() * inputs['input_ids'].shape[1]
-
-            prob = -model_all(input_ids=inputs, labels=inputs)['loss'].detach().cpu().item() \
-                   * sum(test_dataset['attention_mask'][i])
-            # prob = model_all(input_ids=inputs['input_ids'], labels=inputs['input_ids'])['loss'].detach().cpu().item() * inputs['input_ids'].shape[1]
-        else:
-            # print(model.device)
-            # print(inputs.device)
-            model.set_active_adapters(adapter_names[0])
-            prob = -model(input_ids=inputs, labels=inputs)['loss'].detach().cpu().item() * sum(
-                test_dataset['attention_mask'][i])
-            model.set_active_adapters(adapter_names[1])
-            pos_prob = -model(input_ids=inputs, labels=inputs)['loss'].detach().cpu().item() * sum(
-                test_dataset['attention_mask'][i])
-            model.set_active_adapters(adapter_names[2])
-            neg_prob = -model(input_ids=inputs, labels=inputs)['loss'].detach().cpu().item() * sum(
-                test_dataset['attention_mask'][i])
-
-        total_prob = logsumexp(a=[pos_prob, neg_prob], b=[.5, .5])
-        # print(total_prob)
-        # print(prob)
-        probs[i] = prob
-        pos_probs[i] = pos_prob
-        neg_probs[i] = neg_prob
-        total_probs[i] = total_prob
-
-    print("\n****** Testing total probability ************")
-    print("Probs (direct) mean:")
-    print(probs.mean())
-    print("Total probs mean:")
-    print(total_probs.mean())
-    # print(probs)
-    # print(total_probs)
-    print("JS:")
-    print(distance.jensenshannon(np.exp(probs), np.exp(total_probs)))
-
-    print("\n****** Testing marginalization ************")
-    clf_probs = np.zeros(test_len)
-    for i, inputs in enumerate(test_dataset['input_ids']):
-        inputs = torch.LongTensor(inputs).unsqueeze(0)
-        inputs = inputs.to(dev)
-        model.set_active_adapters(adapter_names[3])
-        clf_probs[i] = model(input_ids=inputs)['logits'].log_softmax(-1).cpu()[0, 0].item()
-
-    total_mass = logsumexp(probs)
-    p_pos = logsumexp(clf_probs + probs) - total_mass
-    print("Estimated positive probability:")
-    print(np.exp(p_pos))
-
-    print("\n****** Testing bayes ************")
-    clf_negs = np.log(1 - np.exp(clf_probs))
-    cond_clf_probs = np.stack([clf_negs, clf_probs])
-    p_t_x = cond_clf_probs[test_dataset['label'], np.arange(cond_clf_probs.shape[1])]
-    bayes_p_x_t = p_t_x + probs - np.log(2)
-
-    cond_lm_probs = np.stack([neg_probs, pos_probs])
-    p_x_t = cond_lm_probs[test_dataset['label'], np.arange(cond_lm_probs.shape[1])]
-    print("JS:")
-    print(distance.jensenshannon(np.exp(bayes_p_x_t), np.exp(p_x_t)))
 
 def test_top(dataset_name="new_news", size="small", version=""):
     print("testing...")
@@ -3442,8 +2933,44 @@ def test_top(dataset_name="new_news", size="small", version=""):
             print("\n")
     print("\n\n")
 
+
+# ****************************
+
+def load_pp(dataset, name):
+    f_path = f'/cs/snapless/oabend/eitan.wagner/calibration/{dataset}_scores_{name}_ranks.json'
+    print(f_path)
+    with open(f_path, 'r') as file:
+        pp = json.load(file)
+    return pp
+
+def load_ranks():
+    d = {}
+    for dataset in ["wikitext-2"]:
+        for name in ["electra-base-generator_", "electra-large-generator_", "electra-small-generator_",
+                     "flan-t5-small_", "flan-t5-base_", "flan-t5-large_", "flan-t5-xl_"
+            , "flan-t5-xxl_", "Llama-2-7b-hf_", "Llama-2-7b-chat-hf_", "Llama-2-13b-hf_", "Llama-2-13b-chat-hf_",
+                     "Llama-2-70b-hf_", "Llama-2-70b-chat-hf_", "roberta-base_", "roberta-large_"
+            , "xlm-roberta-base_", "xlm-roberta-large_"]:
+            # print(f"\n\n{dataset} {name}_ranks")
+            try:
+                pp = load_pp(dataset, name)
+                print(len(pp))
+                print(np.mean([len(p) for p in pp]))
+                if len(pp[-1][-1]) == 4:
+                    d[name] = {"eos_rank": [np.mean([p[-1][0] for p in pp])],
+                               "token_rank1": [np.mean([p[-1][1] for p in pp])],
+                               "token_rank2": [np.mean([p[-1][2] for p in pp])], "vocab": pp[-1][-1][-1]}
+                else:
+                    d[name] = {"token_rank1": [np.mean([p[-1][0] for p in pp])],
+                               "token_rank2": [np.mean([p[-1][1] for p in pp])], "vocab": pp[-1][-1][-1]}
+            except:
+                print("doesn't exist")
+                continue
+    return d
+
+# ****************************
+
 def main():
-    # test_T5()
     size = "small"
     batch_size = 64
     random = "random" in sys.argv
@@ -3525,7 +3052,6 @@ def main():
             else:
                 tokenizer = on_data_calibration(size=size, version=version, return_tokenizer=True)
                 on_data_calibration(dataset_name=dataset, size=size, version=version, return_tokenizer=False, tokenizer=tokenizer)
-        return
 
     if entropies:
         with torch.no_grad():
@@ -3533,147 +3059,15 @@ def main():
         print("All entropies:")
         print(all_entropies)
 
-
-    print(f"************** Size: {size} **************")
-    print(f"************** Template: {temp} **************")
-    noun_count, adj_count = T5_mask_filling(batch_size=batch_size, adjacent=True,
-                                            size=size, template=temp, random=random, topics=topics,
-                                            temperature=temperature,
-                                            temperature_list=t_list,
-                                            single_token=single_token, version=version)
-    noun_count, adj_count = 1000, 100
-    # print(noun_count, adj_count)
-    divergence(noun_count, adj_count)
-    # T5_mask_filling(w1="encyclopedia", w2="exclusive")
     print("Done")
 
-
-def main2(classification=False, lm=False, pretrained=False):
-    # make_imdb_texts()
-    size = ""
-    batch_size = 8
-    if "medium" in sys.argv:
-        size = "-medium"
-        batch_size = 8
-    elif "large" in sys.argv:
-        size = "-large"
-        batch_size = 1
-    elif "xl" in sys.argv:
-        size = "-xl"
-        batch_size = 1
-
-    if classification:
-        print("Training classifier")
-        train_gpt2_imdb(classification=True, pretrained=pretrained, size=size, batch_size=batch_size)
-    elif lm:
-        for _pos in ["all", "pos", "neg"]:
-            # for _pos in ["pos", "neg"]:
-            print(f"Training LM-{_pos}")
-            train_gpt2_imdb(pos=_pos, pretrained=pretrained, size=size, batch_size=batch_size)
-    else:
-        print("Testing")
-        with torch.no_grad():
-            test_gpt2_imdb(pretrained=pretrained, size=size)
 
 if __name__ == "__main__":
 
     print("\n\n\n**********************************************")
     print(sys.argv)
     sys.stdout.flush()
-    print("using exponent for js")
-    if "gpt2-imdb" in sys.argv:
-        if "classification" in sys.argv:
-            main2(classification=True, pretrained="pretrained" in sys.argv)
-        elif "lm" in sys.argv:
-            main2(lm=True, pretrained="pretrained" in sys.argv)
-        elif "test" in sys.argv:
-            main2(pretrained="pretrained" in sys.argv)
-    elif "t5" in sys.argv or "roberta" in sys.argv or "xlm-roberta" in sys.argv or "deberta" in sys.argv or "deberta-v2" in sys.argv or "electra" in sys.argv or "llama" in sys.argv or "flan-ul2" in sys.argv or "flan" in sys.argv:
-        main()
-    # test_gpt2_imdb()
+    main()
 
 
-# import matplotlib.pyplot as plt
-# import pandas as pd
-# d={}
-# df = pd.DataFrame(d)
-# df1 = df[[c for c in df.columns if (c.find("js") == -1 and c.find("kl") == -1)]]
-# df2 = df[[c for c in df.columns if c.find("js") >= 0]]
-# df1.plot(ylim=[0, 20], title="")
-# plt.show()
-# df2.plot(ylim=[0, 1], title="js")
-# plt.show()
 
-# *************************************************************************
-# def load_pp(dataset, name):
-#     with open(f'/cs/snapless/oabend/eitan.wagner/calibration/outputs/{dataset}_scores_{name}.json', 'r') as file:
-#         pp = json.load(file)
-#     return pp
-# def check_lengths():
-#     # for dataset in ["new_news_combined", "wikitext-2_combined"]:
-#     # for dataset in ["wikitext-2_combined"]:
-#     # for dataset in ["synthetic/noise", "synthetic/NPs"]:
-#     for dataset in ["partial/new_news12", "partial/wikitext-2_combined0-9", "partial/wikitext-2"]:
-#         for name in ["electra-base-generator_", "electra-large-generator_", "electra-small-generator_",
-#                      "flan-t5-small_", "flan-t5-base_", "flan-t5-large_", "flan-t5-xl_"
-#             , "flan-t5-xxl_", "Llama-2-7b-hf_", "Llama-2-7b-chat-hf_", "Llama-2-13b-hf_", "Llama-2-13b-chat-hf_",
-#                      "Llama-2-70b-hf_", "Llama-2-70b-chat-hf_", "roberta-base_", "roberta-large_"
-#             , "xlm-roberta-base_", "xlm-roberta-large_"]:
-#             # for name in ["electra-base-generator_", "electra-large-generator_", "electra-small-generator_", "flan-t5-small_", "flan-t5-base_","flan-t5-large_","flan-t5-xl_"
-#             #     ,"flan-t5-xxl_", "roberta-base_", "roberta-base_"
-#             #              , "xlm-roberta-base_", "xlm-roberta-base_"]:
-#             print(f"\n\n{dataset} {name}")
-#             try:
-#                 pp = load_pp(dataset, name)
-#                 print(np.mean([len(p) for p in pp]))
-#                 print(len(pp))
-#             except:
-#                 print("doesn't exist")
-#                 continue
-
-# def load_nps(name):
-#     with open(f'/cs/snapless/oabend/eitan.wagner/calibration/{name}_nps2.json', 'r') as file:
-#         nps = json.load(file)
-#     return nps
-#
-# def find_common_nps(names):
-#     # names = ["Llama", "flan"]
-#     sets = [set(load_nps(n)) for n in names]
-#     return set.intersection(*sets)
-#
-# def combine_nps():
-#     names =  ["xlm", "roberta", "electra", "flan", "Llama"]
-#     common = find_common_nps(names)
-#     return common
-
-def load_pp(dataset, name):
-    f_path = f'/cs/snapless/oabend/eitan.wagner/calibration/{dataset}_scores_{name}_ranks.json'
-    print(f_path)
-    with open(f_path, 'r') as file:
-        pp = json.load(file)
-    return pp
-
-def load_ranks():
-    d = {}
-    for dataset in ["wikitext-2"]:
-        for name in ["electra-base-generator_", "electra-large-generator_", "electra-small-generator_",
-                     "flan-t5-small_", "flan-t5-base_", "flan-t5-large_", "flan-t5-xl_"
-            , "flan-t5-xxl_", "Llama-2-7b-hf_", "Llama-2-7b-chat-hf_", "Llama-2-13b-hf_", "Llama-2-13b-chat-hf_",
-                     "Llama-2-70b-hf_", "Llama-2-70b-chat-hf_", "roberta-base_", "roberta-large_"
-            , "xlm-roberta-base_", "xlm-roberta-large_"]:
-            # print(f"\n\n{dataset} {name}_ranks")
-            try:
-                pp = load_pp(dataset, name)
-                print(len(pp))
-                print(np.mean([len(p) for p in pp]))
-                if len(pp[-1][-1]) == 4:
-                    d[name] = {"eos_rank": [np.mean([p[-1][0] for p in pp])],
-                               "token_rank1": [np.mean([p[-1][1] for p in pp])],
-                               "token_rank2": [np.mean([p[-1][2] for p in pp])], "vocab": pp[-1][-1][-1]}
-                else:
-                    d[name] = {"token_rank1": [np.mean([p[-1][0] for p in pp])],
-                               "token_rank2": [np.mean([p[-1][1] for p in pp])], "vocab": pp[-1][-1][-1]}
-            except:
-                print("doesn't exist")
-                continue
-    return d
