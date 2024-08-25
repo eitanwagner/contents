@@ -242,29 +242,20 @@ def _mask_filling(all_nouns, all_adjs, batch_size, noun_count, adj_count, adjace
                   random=False, noun_topics=None, adj_topics=None, psi=None, temperature=None, temperature_list=False,
                   single_token=False, version=""):
     all_scores_w1 = np.zeros((len(all_nouns), len(all_adjs)))
-    # with open(f'/cs/snapless/oabend/eitan.wagner/c alibration/all_scores_w1.npy', 'rb') as f:
-    #     all_scores_w1 = np.load(f)
     all_scores_w2 = np.zeros((len(all_nouns), len(all_adjs)))
-    # with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores_w2.npy', 'rb') as f:
-    #     all_scores_w2 = np.load(f)
     all_scores_i = np.zeros((len(all_nouns), len(all_adjs)))
-    # with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores_i.npy', 'rb') as f:
-    #     all_scores_i = np.load(f)
     all_scores_j = np.zeros((len(all_nouns), len(all_adjs)))
 
     _all_scores_w1 = np.zeros((noun_count // 100 + 1, 100, 50))
     _all_scores_w2 = np.zeros((noun_count // 100 + 1, 100, 50))
     _all_scores_i = np.zeros((noun_count // 100 + 1, 100, 50))
     _all_scores_j = np.zeros((noun_count // 100 + 1, 100, 50))
-    # with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores_j.npy', 'rb') as f:
-    #     all_scores_i = np.load(f)
     w1_sum = -np.inf
     w2_sum = -np.inf
     i_sum = -np.inf
     j_sum = -np.inf
 
     calculated_nouns = []
-    # calculated_nouns = list(set(all_nouns[:8950]))
 
     if adjacent:
         if temperature_list:
@@ -335,16 +326,13 @@ def _mask_filling(all_nouns, all_adjs, batch_size, noun_count, adj_count, adjace
         print("adj_count", adj_count)
 
         if single_token:
-            # noun_num_tokens = [len(tokenizer(n).input_ids[:-1]) for n in all_nouns]
             single_token_nouns = [n for n in all_nouns if len(tokenizer(n).input_ids[:-1]) == 1]
-            # adj_num_tokens = [len(tokenizer(a).input_ids[:-1]) for a in all_adjs]
             single_token_adjs = [a for a in all_adjs if len(tokenizer(a).input_ids[:-1]) == 1]
             all_nouns = single_token_nouns
             all_adjs = single_token_adjs
             noun_count = len(single_token_nouns)
             adj_count = len(single_token_adjs)
 
-        # i_range = tqdm.tqdm(enumerate(all_nouns[:noun_count]))
         max_j = len(all_adjs[:adj_count])
         j_range = range(0, max_j, batch_size)
         _i_range = tqdm.tqdm(range(0, noun_count, 100))
@@ -353,8 +341,6 @@ def _mask_filling(all_nouns, all_adjs, batch_size, noun_count, adj_count, adjace
             if temperature_list:
                 j_scores1 = np.zeros((100, 50, len(temperature)))
                 j_scores2 = np.zeros((100, 50, len(temperature)))
-            # if _i > 6000:
-            #     print(_i)
             i_range = range(_i, _i + 100)
             if adjacent:
                 if _i // 2 + 50 > adj_count:
@@ -365,7 +351,6 @@ def _mask_filling(all_nouns, all_adjs, batch_size, noun_count, adj_count, adjace
                 w1 = all_nouns[i]
                 if w1 in calculated_nouns:
                     continue
-                # for j, w2 in enumerate(all_adjs[:adj_count]):
 
                 if not temperature_list:
                     for j in j_range:
@@ -427,56 +412,27 @@ def _mask_filling(all_nouns, all_adjs, batch_size, noun_count, adj_count, adjace
                     t_scores[_e, t_i] = js1v2
                     t_scores_r[_e, t_i] = rjs1v2
 
-            # with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores{"_a" if adjacent else ""}_w1.npy', 'wb') as f:
-            #     np.save(f, all_scores_w1)
-            # with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores{"_a" if adjacent else ""}_w2.npy', 'wb') as f:
-            #     np.save(f, all_scores_w2)
-            # with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores{"_a" if adjacent else ""}_i.npy', 'wb') as f:
-            #     np.save(f, all_scores_i)
-            # if adjacent:
-            #     with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores{"_a" if adjacent else ""}_j.npy', 'wb') as f:
-            #         np.save(f, all_scores_j)
-            # with open(f'/cs/snapless/oabend/eitan.wagner/calibration/calculated_noun_list{"_a" if adjacent else ""}.json', 'w') as outfile:
-            #     json.dump(calculated_nouns, outfile)
-
             if adjacent and not temperature_list:
                 j_range = range(_i // 2, _i // 2 + 50)
-                # print("w1 vs w2:")
                 arr = np.copy(all_scores_w2[np.ix_(i_range, j_range)])
 
                 entropies2.append(entropy(np.exp(arr.ravel()), base=2))
                 entropies1.append(entropy(np.exp(all_scores_w1[np.ix_(i_range, j_range)].ravel()), base=2))
                 d["1v2"].append(np.abs(all_scores_w1[np.ix_(i_range, j_range)] - arr).mean())
-                # arr1 = all_scores_w1[np.ix_(i_range, j_range)] - arr
-                # d["1v2"].append(arr1[arr1 >= 0].mean())
-                # unnormalized kl-divergence
                 d["ukl1v2"].append(np.exp(all_scores_w1[np.ix_(i_range, j_range)].ravel()) @
                                    (all_scores_w1[np.ix_(i_range, j_range)].ravel() - arr.ravel()))
-                # d["js1v2"].append(distance.jensenshannon(all_scores_w1[np.ix_(i_range, j_range)].ravel(),
-                #                                          arr.ravel()))
-                # F.cross_entropy()
 
                 d["js1v2"].append(distance.jensenshannon(np.exp(all_scores_w1[np.ix_(i_range, j_range)].ravel()),
                                                          np.exp(arr.ravel())))
                 np.random.shuffle(arr.ravel())
                 d["r1v2"].append(np.abs(all_scores_w1[np.ix_(i_range, j_range)]
                                         - arr).mean())
-                # arr1 = all_scores_w1[np.ix_(i_range, j_range)] - arr
-                # d["r1v2"].append(arr1[arr1 >= 0].mean())
-                # d["rjs1v2"].append(distance.jensenshannon(all_scores_w1[np.ix_(i_range, j_range)].ravel(),
-                #                                           arr.ravel()))
                 d["rjs1v2"].append(distance.jensenshannon(np.exp(all_scores_w1[np.ix_(i_range, j_range)].ravel()),
                                                           np.exp(arr.ravel())))
-                # print(d["1v2"][-1])
-                # print(d["r1v2"][-1])
-                # print(d["js1v2"][-1])
-                # print(d["rjs1v2"][-1])
 
                 # print("w1 vs i:")
                 arr = np.copy(all_scores_i[np.ix_(i_range, j_range)])
                 d["1vi"].append(np.abs(all_scores_w1[np.ix_(i_range, j_range)] - arr).mean())
-                # d["js1vi"].append(distance.jensenshannon(all_scores_w1[np.ix_(i_range, j_range)].ravel(),
-                #                                          all_scores_i[np.ix_(i_range, j_range)].ravel()))
 
                 d["ukl1vi"].append(np.exp(all_scores_w1[np.ix_(i_range, j_range)].ravel()) @
                                    (all_scores_w1[np.ix_(i_range, j_range)].ravel() - arr.ravel()))
@@ -485,14 +441,8 @@ def _mask_filling(all_nouns, all_adjs, batch_size, noun_count, adj_count, adjace
                 np.random.shuffle(arr.ravel())
                 d["r1vi"].append(np.abs(all_scores_w1[np.ix_(i_range, j_range)]
                                         - arr).mean())
-                # d["rjs1vi"].append(distance.jensenshannon(all_scores_w1[np.ix_(i_range, j_range)].ravel(),
-                #                                           arr.ravel()))
                 d["rjs1vi"].append(distance.jensenshannon(np.exp(all_scores_w1[np.ix_(i_range, j_range)].ravel()),
                                                           np.exp(arr.ravel())))
-                # print(d["1vi"][-1])
-                # print(d["r1vi"][-1])
-                # print(d["js1vi"][-1])
-                # print(d["rjs1vi"][-1])
 
                 # print("w1 vs j:")
                 arr = np.copy(all_scores_j[np.ix_(i_range, j_range)])
@@ -507,21 +457,13 @@ def _mask_filling(all_nouns, all_adjs, batch_size, noun_count, adj_count, adjace
                 np.random.shuffle(arr.ravel())
                 d["r1vj"].append(np.abs(all_scores_w1[np.ix_(i_range, j_range)]
                                         - arr).mean())
-                # d["rjs1vj"].append(distance.jensenshannon(all_scores_w1[np.ix_(i_range, j_range)].ravel(),
-                #                                           arr.ravel()))
                 d["rjs1vj"].append(distance.jensenshannon(np.exp(all_scores_w1[np.ix_(i_range, j_range)].ravel()),
                                                           np.exp(arr.ravel())))
-                # print(d["1vj"][-1])
-                # print(d["r1vj"][-1])
-                # print(d["js1vj"][-1])
-                # print(d["rjs1vj"][-1])
 
                 # print("w2 vs j:")
                 arr = np.copy(all_scores_j[np.ix_(i_range, j_range)])
                 d["2vj"].append(
                     np.abs(all_scores_w2[np.ix_(i_range, j_range)] - all_scores_j[np.ix_(i_range, j_range)]).mean())
-                # d["js2vj"].append(distance.jensenshannon(all_scores_w2[np.ix_(i_range, j_range)].ravel(),
-                #                                          all_scores_j[np.ix_(i_range, j_range)].ravel()))
 
                 d["ukl2vj"].append(np.exp(all_scores_w2[np.ix_(i_range, j_range)].ravel()) @
                                    (all_scores_w2[np.ix_(i_range, j_range)].ravel() - arr.ravel()))
@@ -530,14 +472,8 @@ def _mask_filling(all_nouns, all_adjs, batch_size, noun_count, adj_count, adjace
                 np.random.shuffle(arr.ravel())
                 d["r2vj"].append(np.abs(all_scores_w2[np.ix_(i_range, j_range)]
                                         - arr).mean())
-                # d["rjs2vj"].append(distance.jensenshannon(all_scores_w2[np.ix_(i_range, j_range)].ravel(),
-                #                                           arr.ravel()))
                 d["rjs2vj"].append(distance.jensenshannon(np.exp(all_scores_w2[np.ix_(i_range, j_range)].ravel()),
                                                           np.exp(arr.ravel())))
-                # print(d["2vj"][-1])
-                # print(d["r2vj"][-1])
-                # print(d["js2vj"][-1])
-                # print(d["rjs2vj"][-1])
                 sys.stdout.flush()
             if _e == len(_i_range) // 2:
                 print(d)
@@ -549,10 +485,10 @@ def _mask_filling(all_nouns, all_adjs, batch_size, noun_count, adj_count, adjace
             print(t_scores)
             print("t_scores_r:")
             print(t_scores_r)
-            with open(f'/cs/snapless/oabend/eitan.wagner/calibration/t_scores.npy',
+            with open(args.base_path + 'results/t_scores.npy',
                       'wb') as f:
                 np.save(f, t_scores)
-            with open(f'/cs/snapless/oabend/eitan.wagner/calibration/t_scores_r.npy',
+            with open(args.base_path + 'results/t_scores_r.npy',
                       'wb') as f:
                 np.save(f, t_scores_r)
             return noun_count, adj_count
@@ -562,17 +498,17 @@ def _mask_filling(all_nouns, all_adjs, batch_size, noun_count, adj_count, adjace
         d["ukl1vj"] = (np.array(d["ukl1vj"]) / np.exp(w1_sum) + w1_sum - j_sum).tolist()
         d["ukl2vj"] = (np.array(d["ukl2vj"]) / np.exp(w2_sum) + w2_sum - j_sum).tolist()
 
-        with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores{"_a" if adjacent else ""}_w1.npy',
+        with open(args.base_path + 'results/all_scores{"_a" if adjacent else ""}_w1.npy',
                   'wb') as f:
             np.save(f, _all_scores_w1)
-        with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores{"_a" if adjacent else ""}_w2.npy',
+        with open(args.base_path + 'results/all_scores{"_a" if adjacent else ""}_w2.npy',
                   'wb') as f:
             np.save(f, _all_scores_w2)
-        with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores{"_a" if adjacent else ""}_i.npy',
+        with open(args.base_path + 'results/all_scores{"_a" if adjacent else ""}_i.npy',
                   'wb') as f:
             np.save(f, _all_scores_i)
         if adjacent:
-            with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores{"_a" if adjacent else ""}_j.npy',
+            with open(args.base_path + 'results/all_scores{"_a" if adjacent else ""}_j.npy',
                       'wb') as f:
                 np.save(f, _all_scores_j)
         print(d)
@@ -584,19 +520,6 @@ def _mask_filling(all_nouns, all_adjs, batch_size, noun_count, adj_count, adjace
     return noun_count, adj_count
 
 
-# def load_w_temperature(t, adjacent=True):
-#     with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores{"_a" if adjacent else ""}_w1.npy', 'rb') as f:
-#         _all_scores_w1 = np.load(f)
-#     with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores{"_a" if adjacent else ""}_w2.npy', 'rb') as f:
-#         _all_scores_w2 = np.load(f)
-#     with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores{"_a" if adjacent else ""}_i.npy', 'rb') as f:
-#         _all_scores_i = np.load(f)
-#     if adjacent:
-#         with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores{"_a" if adjacent else ""}_j.npy',
-#                   'rb') as f:
-#             _all_scores_j = np.load(f)
-#     return _all_scores_w1, _all_scores_w2, _all_scores_i, _all_scores_j
-
 def make_freq():
     # from: https://github.com/hermitdave/FrequencyWords/blob/master/content/2018/en/en_full.txt
     with open(args.path + 'en_full.txt', 'r') as infile:
@@ -606,7 +529,7 @@ def make_freq():
 
 
 def divergence2(noun_count, adj_count):
-    with open(f'/cs/snapless/oabend/eitan.wagner/segmentation/all_scores_{noun_count}_{adj_count}.json', 'r') as infile:
+    with open(args.base_path + 'results/all_scores_{noun_count}_{adj_count}.json', 'r') as infile:
         all_scores = json.load(infile)
 
     p1, p2 = [], []
@@ -623,11 +546,11 @@ def divergence2(noun_count, adj_count):
 
 
 def divergence(noun_count, adj_count):
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores_w1.npy', 'rb') as f:
+    with open(args.base_path + 'results/all_scores_w1.npy', 'rb') as f:
         p1 = np.load(f)[:noun_count, :adj_count]
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores_w2.npy', 'rb') as f:
+    with open(args.base_path + 'results/all_scores_w2.npy', 'rb') as f:
         p2 = np.load(f)[:noun_count, :adj_count]
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/all_scores_i.npy', 'rb') as f:
+    with open(args.base_path + 'results/all_scores_i.npy', 'rb') as f:
         all_scores_i = np.load(f)[:noun_count, :adj_count]
 
     from scipy.spatial import distance
@@ -652,12 +575,12 @@ def make_extra_noise(length=50, num_samples=1000):
     print(f"Making extra noise. {num_samples} texts.")
     if args.load:
         print('Loading data')
-        with open(f'/cs/snapless/oabend/eitan.wagner/calibration/_extra_noise.json', 'r') as f:
+        with open(args.base_path + 'data/_extra_noise.json', 'r') as f:
             texts = json.load(f)[:num_samples]
     else:
         characters = string.ascii_letters + string.digits + string.punctuation
         texts = [''.join(random.choice(characters) for i in range(length)) for _ in range(num_samples)]
-        with open(f'/cs/snapless/oabend/eitan.wagner/calibration/_extra_noise.json', 'w') as f:
+        with open(args.base_path + 'data/_extra_noise.json', 'w') as f:
             json.dump(texts, f)
     return texts
 
@@ -671,12 +594,12 @@ def make_total_noise(tokenizer, length=20, num_samples=1000):
     print(f"Making total noise. {num_samples} texts.")
     if args.load:
         print('Loading data')
-        with open(f'/cs/snapless/oabend/eitan.wagner/calibration/_total_noise.json', 'r') as f:
+        with open(args.base_path + 'data/_total_noise.json', 'r') as f:
             texts = json.load(f)[:num_samples]
     else:
         tokens = np.random.randint(tokenizer.vocab_size, size=(num_samples, length))
         texts = tokenizer.batch_decode(tokens, skip_special_tokens=True)
-        with open(f'/cs/snapless/oabend/eitan.wagner/calibration/_total_noise.json', 'w') as f:
+        with open(args.base_path + 'data/_total_noise.json', 'w') as f:
             json.dump(texts, f)
     return texts
 
@@ -691,8 +614,7 @@ def make_synthetic(template=" <NP> is a thing", tokenizer=None, noise=False, num
     if args.only_make:
         num_samples = 50000
 
-    if args.template:
-        template = sys.argv[sys.argv.index("--template") + 1]
+    template = args.template
 
     print(f"Making synthetic data. {num_samples} texts.")
     print(f"Template: {template}")
@@ -703,12 +625,11 @@ def make_synthetic(template=" <NP> is a thing", tokenizer=None, noise=False, num
     if args.load:
         if "common" in sys.argv:
             print('Loading data - common NPs')
-            with open(
-                    f'/cs/snapless/oabend/eitan.wagner/calibration/common_nps2.json', 'r') as f:
+            with open(args.base_path + 'data/common_nps2.json', 'r') as f:
                 pairs = json.load(f)[:num_samples]
         else:
             print(f'Loading data - {tokenizer.name_or_path.split("/")[-1].split("-")[0]}')
-            with open(f'/cs/snapless/oabend/eitan.wagner/calibration/{tokenizer.name_or_path.split("/")[-1].split("-")[0]}'
+            with open(args.base_path + f'data/{tokenizer.name_or_path.split("/")[-1].split("-")[0]}'
                       f'{"-ul2" if "ul2" in tokenizer.name_or_path else ""}_nps2{"-noise" if noise else ""}.json', 'r') as f:
                 pairs = json.load(f)[:num_samples]
     else:
@@ -764,7 +685,7 @@ def make_synthetic(template=" <NP> is a thing", tokenizer=None, noise=False, num
             _pairs = np.random.choice(w_list, size=(num_samples, 2))
             pairs = [" ".join([p1, p2]) for p1, p2 in _pairs]
         pairs = [p for p in pairs if p.isascii()]
-        with open(f'/cs/snapless/oabend/eitan.wagner/calibration/{tokenizer.name_or_path.split("/")[-1].split("-")[0]}'
+        with open(args.base_path + f'data/{tokenizer.name_or_path.split("/")[-1].split("-")[0]}'
                   f'{"-ul2" if "ul2" in tokenizer.name_or_path else ""}_nps2{"-noise" if noise else ""}.json', 'w') as f:
             json.dump(pairs, f)
 
@@ -781,8 +702,8 @@ def on_data_calibration(dataset_name='wikitext-2', size="small", version="", ret
     """
     set_num = 0
     set_num_s = ""
-    if "-set_num" in sys.argv:
-        set_num = int(sys.argv[sys.argv.index("-set_num") + 1])
+    if args.set_num >= 0:
+        set_num = args.set_num
         set_num_s = f"s{set_num}"
     if not return_tokenizer:
         index = None
@@ -802,17 +723,17 @@ def on_data_calibration(dataset_name='wikitext-2', size="small", version="", ret
             dataset = load_dataset('edarchimbaud/news-sp500', split="train")
             texts = dataset['body']
         elif dataset_name == 'new_news':
-            with open(f'/cs/snapless/oabend/eitan.wagner/calibration/news-2.7.2023.json', 'r') as file:
+            with open(args.base_path + 'data/news-2.7.2023.json', 'r') as file:
                 texts = [t['text'] for t in json.load(file) if t['title'].find("Subscribe") == -1]
-            with open(f'/cs/snapless/oabend/eitan.wagner/calibration/news-6.7.2023.json', 'r') as file:
+            with open(args.base_path + 'data/news-6.7.2023.json', 'r') as file:
                 texts = texts + [t['text'] for t in json.load(file) if t['title'].find("Subscribe") == -1]
             if "shuffle" in sys.argv:
                 import random
                 texts = [" ".join(random.sample(t.split(), len(t.split()))) for t in texts]
         elif dataset_name == 'new_news2':
-            with open(f'/cs/snapless/oabend/eitan.wagner/calibration/news-4.9.2023.json', 'r') as file:
+            with open(args.base_path + 'data/news-4.9.2023.json', 'r') as file:
                 texts = [t['text'] for t in json.load(file) if t['title'].find("Subscribe") == -1]
-            with open(f'/cs/snapless/oabend/eitan.wagner/calibration/news-18.9.2023.json', 'r') as file:
+            with open(args.base_path + 'data/news-18.9.2023.json', 'r') as file:
                 texts = texts + [t['text'] for t in json.load(file) if t['title'].find("Subscribe") == -1]
         elif dataset_name == "NPs":
             texts, index = make_synthetic(tokenizer=tokenizer, uses_eos="llama" not in sys.argv)
@@ -978,10 +899,10 @@ def on_data_calibration(dataset_name='wikitext-2', size="small", version="", ret
     elif "llama" in sys.argv or "flan-ul2" in sys.argv or "flan" in sys.argv:
         if return_probs:
             probs, ids = llama_pair_probabilities(texts, model, tokenizer, fixed_pos=index, return_probs=True, set_num=set_num)
-            with open(f'/cs/snapless/oabend/eitan.wagner/calibration/{dataset_name}{set_num_s}_scores_{name.split("/")[-1]}_probs.npy',
+            with open(args.base_path + f'results/{dataset_name}{set_num_s}_scores_{name.split("/")[-1]}_probs.npy',
                       'wb') as outfile:
                 np.save(outfile, probs)
-            with open(f'/cs/snapless/oabend/eitan.wagner/calibration/{dataset_name}{set_num_s}_scores_{name.split("/")[-1]}_ids.npy',
+            with open(args.base_path + f'results/{dataset_name}{set_num_s}_scores_{name.split("/")[-1]}_ids.npy',
                       'wb') as outfile:
                 np.save(outfile, ids)
             return
@@ -990,9 +911,9 @@ def on_data_calibration(dataset_name='wikitext-2', size="small", version="", ret
     else:
         if return_probs:
             probs, ids = mlm_pair_probabilities(texts, model, tokenizer, temperature=1., deps=deps, deps2=deps2, fixed_pos=index, return_probs=True)
-            with open(f'/cs/snapless/oabend/eitan.wagner/calibration/{dataset_name}_scores_{name.split("/")[-1]}_probs.npy', 'wb') as outfile:
+            with open(args.base_path + f'results/{dataset_name}_scores_{name.split("/")[-1]}_probs.npy', 'wb') as outfile:
                 np.save(outfile, probs)
-            with open(f'/cs/snapless/oabend/eitan.wagner/calibration/{dataset_name}_scores_{name.split("/")[-1]}_ids.npy', 'wb') as outfile:
+            with open(args.base_path + f'results/{dataset_name}_scores_{name.split("/")[-1]}_ids.npy', 'wb') as outfile:
                 np.save(outfile, ids)
             return
         else:
@@ -1012,7 +933,7 @@ def on_data_calibration(dataset_name='wikitext-2', size="small", version="", ret
 
     na = "_na" if "non_ascii" in sys.argv else ""
     ranks = "_ranks" if "ranks" in sys.argv else ""
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/{dataset_name}{set_num_s}_scores_{name.split("/")[-1]}'
+    with open(args.base_path + f'results/{dataset_name}{set_num_s}_scores_{name.split("/")[-1]}'
               f'{"_deps" if deps else ""}{"_deps2" if deps2 else ""}{"_l1_2" if l1_2 else ""}{"_l2_1" if l2_1 else ""}'
               f'{"_u" if use_underscore else "_"}{na}{ranks}.json', 'w') as outfile:
         json.dump(pp, outfile)
@@ -1299,7 +1220,7 @@ def load_probs(dataset_name="wikitext", name="roberta-base", set_num=""):
     set_num_s = ""
     if set_num != "":
         set_num_s = f"s{set_num}"
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/{dataset_name}{set_num_s}_scores_{name.split("/")[-1]}_.json', 'r') as infile:
+    with open(args.base_path + f'results/{dataset_name}{set_num_s}_scores_{name.split("/")[-1]}_.json', 'r') as infile:
         pp = json.load(infile)
     return pp
 
@@ -1307,9 +1228,9 @@ def load_full_probs(dataset_name="wikitext", name="roberta-base", set_num=""):
     set_num_s = ""
     if set_num != "":
         set_num_s = f"s{set_num}"
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/{dataset_name}{set_num_s}_scores_{name.split("/")[-1]}_probs.npy', 'rb') as infile:
+    with open(args.base_path + f'results/{dataset_name}{set_num_s}_scores_{name.split("/")[-1]}_probs.npy', 'rb') as infile:
         probs = np.load(infile)
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/{dataset_name}{set_num_s}_scores_{name.split("/")[-1]}_ids.npy', 'rb') as infile:
+    with open(args.base_path + f'results/{dataset_name}{set_num_s}_scores_{name.split("/")[-1]}_ids.npy', 'rb') as infile:
         ids = np.load(infile)
     return probs, ids
 
@@ -2671,7 +2592,7 @@ def boxplot(name="", ylim=None, bins=None, dataset="wikitext-2", by_prob=False):
     # box plot of absolute log-distance
     import json
 
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/{dataset}_scores_{name}.json', 'r') as file:
+    with open(args.base_path + f'results/{dataset}_scores_{name}.json', 'r') as file:
         pp = json.load(file)
     import pandas as pd
 
@@ -2770,7 +2691,7 @@ def test_top(dataset_name="new_news", size="small", version=""):
     underscore = tokenizer.convert_tokens_to_ids('▁')
     underscore_str = '▁'
 
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/{dataset_name}_scores_{name.split("/")[-1]}'
+    with open(args.base_path + f'results/{dataset_name}_scores_{name.split("/")[-1]}'
               f'{"_deps" if deps else ""}{"_l1_2" if l1_2 else ""}{"_l2_1" if l2_1 else ""}{"_u" if use_underscore else "_"}.json', 'r') as infile:
         ppt5=json.load(infile)
     dict_t5_v11 = {"p_i":[_pp[0] for _pp in ppt5],
@@ -2790,9 +2711,9 @@ def test_top(dataset_name="new_news", size="small", version=""):
     worst_10 = df_t5.sort_values(by=['abs_diffs'])['ids'][-10:]
     worst_10_tokens = df_t5.sort_values(by=['abs_diffs'])['tokens'][-10:]
 
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/news-2.7.2023.json', 'r') as file:
+    with open(args.base_path + f'data/news-2.7.2023.json', 'r') as file:
         texts = [t['text'] for t in json.load(file) if t['title'].find("Subscribe") == -1]
-    with open(f'/cs/snapless/oabend/eitan.wagner/calibration/news-6.7.2023.json', 'r') as file:
+    with open(args.base_path + f'data/news-6.7.2023.json', 'r') as file:
         texts = texts + [t['text'] for t in json.load(file) if t['title'].find("Subscribe") == -1]
 
     print("top and worst 10 cases:")
@@ -2937,7 +2858,7 @@ def test_top(dataset_name="new_news", size="small", version=""):
 # ****************************
 
 def load_pp(dataset, name):
-    f_path = f'/cs/snapless/oabend/eitan.wagner/calibration/{dataset}_scores_{name}_ranks.json'
+    f_path = args.base_path + f'results/{dataset}_scores_{name}_ranks.json'
     print(f_path)
     with open(f_path, 'r') as file:
         pp = json.load(file)
@@ -3028,11 +2949,6 @@ def main():
     elif "xxl" in sys.argv:
         size = "xxl"
         batch_size = 2
-    elif "finetuned" in sys.argv:
-        size = f"/cs/snapless/oabend/eitan.wagner/segmentation/models/t5-masked-{size}"
-        # batch_size = 64
-    # else:
-    #     batch_size = 64
     if "--template" in sys.argv:
         temp = sys.argv[sys.argv.index("--template") + 1]
 

@@ -4,7 +4,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--template', type=str, default=" <NP> is a thing")
-    parser.add_argument('--set_num', type=int, default=0)
+    parser.add_argument('--set_num', type=int, default=-1)
 
     parser.add_argument('--load', action="store_true", help="whether to load data")
     parser.add_argument('--only_make', action="store_true", help="whether to only generate data")
