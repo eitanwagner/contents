@@ -239,7 +239,7 @@ def _adjacent_mask_filling(model=None, model2=None, tokenizer=None, w1=None, w2=
 
 
 def _mask_filling(all_nouns, all_adjs, batch_size, noun_count, adj_count, adjacent=False, size="small", template="good",
-                  random=False, noun_topics=None, adj_topics=None, psi=None, temperature=None, temperature_list=False,
+                  noun_topics=None, adj_topics=None, psi=None, temperature=None, temperature_list=False,
                   single_token=False, version=""):
     all_scores_w1 = np.zeros((len(all_nouns), len(all_adjs)))
     all_scores_w2 = np.zeros((len(all_nouns), len(all_adjs)))
@@ -309,17 +309,10 @@ def _mask_filling(all_nouns, all_adjs, batch_size, noun_count, adj_count, adjace
             tokenizer = T5Tokenizer.from_pretrained(name)
             model = T5ForConditionalGeneration.from_pretrained(path)
             model2 = None
-        elif not random:
+        else:
             model = T5ForConditionalGeneration.from_pretrained(name)
             model2 = None
             tokenizer = T5Tokenizer.from_pretrained(name)
-        else:
-            from transformers import T5Config
-            tokenizer = T5Tokenizer.from_pretrained(name)
-            configuration = T5Config.from_pretrained(name)
-            model = T5ForConditionalGeneration(config=configuration)
-            model2 = T5ForConditionalGeneration(config=configuration)
-            model2.to(dev)
         model.to(dev)
         print("batch_size", batch_size)
         print("noun_count", noun_count)
@@ -529,7 +522,7 @@ def make_freq():
 
 
 def divergence2(noun_count, adj_count):
-    with open(args.base_path + 'results/all_scores_{noun_count}_{adj_count}.json', 'r') as infile:
+    with open(args.base_path + f'results/all_scores_{noun_count}_{adj_count}.json', 'r') as infile:
         all_scores = json.load(infile)
 
     p1, p2 = [], []
@@ -705,12 +698,12 @@ def on_data_calibration(dataset_name='wikitext-2', size="small", version="", ret
     if args.set_num >= 0:
         set_num = args.set_num
         set_num_s = f"s{set_num}"
+
     if not return_tokenizer:
         index = None
         deps = "deps" in sys.argv
         return_probs = "return_probs" in sys.argv
         deps2 = "deps2" in sys.argv
-        use_underscore = "use_underscore" in sys.argv
         entropies = "entropies" in sys.argv
         texts = []
         print("Using loss (counting also the special tokens)")
@@ -718,18 +711,11 @@ def on_data_calibration(dataset_name='wikitext-2', size="small", version="", ret
             from datasets import load_dataset
             dataset = load_dataset('wikitext', 'wikitext-2-raw-v1', split="train")
             texts = dataset['text']
-        elif dataset_name == 'news-sp500':
-            from datasets import load_dataset
-            dataset = load_dataset('edarchimbaud/news-sp500', split="train")
-            texts = dataset['body']
         elif dataset_name == 'new_news':
             with open(args.base_path + 'data/news-2.7.2023.json', 'r') as file:
                 texts = [t['text'] for t in json.load(file) if t['title'].find("Subscribe") == -1]
             with open(args.base_path + 'data/news-6.7.2023.json', 'r') as file:
                 texts = texts + [t['text'] for t in json.load(file) if t['title'].find("Subscribe") == -1]
-            if "shuffle" in sys.argv:
-                import random
-                texts = [" ".join(random.sample(t.split(), len(t.split()))) for t in texts]
         elif dataset_name == 'new_news2':
             with open(args.base_path + 'data/news-4.9.2023.json', 'r') as file:
                 texts = [t['text'] for t in json.load(file) if t['title'].find("Subscribe") == -1]
@@ -749,44 +735,9 @@ def on_data_calibration(dataset_name='wikitext-2', size="small", version="", ret
         if "ranks" in sys.argv:
             texts = texts[:25]
 
-    if "t5" in sys.argv:
-        name = f"t5-{size}"
-        if version.startswith("v1_1") or version.startswith("flan"):
-            _size = size
-            if size == "3b":
-                _size = "xl"
-            if size == "11b":
-                _size = "xxl"
-            if version.startswith("v1_1"):
-                name = f"google/t5-v1_1-{_size}"
-            elif version.find("ul2") > -1:
-                name = f"google/{version}"
-            else:
-                name = f"google/flan-t5-{_size}"
-        if version.find("ul2") > -1:
-            name = f"google/{version}"
-            from transformers import BitsAndBytesConfig, AutoModelForSeq2SeqLM
-            double_quant_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_use_double_quant=True,
-            )
-            tokenizer = AutoTokenizer.from_pretrained(name, legacy=False)
-            if return_tokenizer:
-                return tokenizer
-            model = AutoModelForSeq2SeqLM.from_pretrained(name, device_map="auto",
-                                                          quantization_config=double_quant_config)
-        elif size == "11b" or size == "xxl":
-            tokenizer = AutoTokenizer.from_pretrained(name, legacy=False)
-            if return_tokenizer:
-                return tokenizer
-            model = T5ForConditionalGeneration.from_pretrained(name, device_map="auto", load_in_4bit=True)
-        else:
-            tokenizer = AutoTokenizer.from_pretrained(name, legacy=False)
-            if return_tokenizer:
-                return tokenizer
-            model = T5ForConditionalGeneration.from_pretrained(name)
+    # load model and tokenizer
 
-    elif "flan" in sys.argv:
+    if "flan" in sys.argv:
         # flan models but used like the llama case
         _size = size
         if size == "3b":
@@ -837,6 +788,7 @@ def on_data_calibration(dataset_name='wikitext-2', size="small", version="", ret
                                                      quantization_config=double_quant_config)
         else:
             model = None
+
     elif "roberta" in sys.argv:
         name = f"roberta-{size}" if size != "small" else "distilroberta-base"
         tokenizer = AutoTokenizer.from_pretrained(name)
@@ -885,18 +837,11 @@ def on_data_calibration(dataset_name='wikitext-2', size="small", version="", ret
     if "flan-ul2" not in sys.argv and "ul2" not in sys.argv and "11b" not in sys.argv and "llama" not in sys.argv:
         if "t5" in sys.argv:
             model.to(dev)
-    print("Using model.eval()")
 
     if entropies:
         return llama_entropies(texts, model, tokenizer)
 
-    if "t5" in sys.argv:
-        # pp = pair_probabilities(texts, model, tokenizer, temperature=1., deps=deps, deps2=deps2)
-        if use_underscore:
-            pp = pair_probabilities2(texts, model, tokenizer, temperature=1., deps=deps)
-        else:
-            pp = pair_probabilities3(texts, model, tokenizer, temperature=1., deps=deps)
-    elif "llama" in sys.argv or "flan-ul2" in sys.argv or "flan" in sys.argv:
+    if "llama" in sys.argv or "flan-ul2" in sys.argv or "flan" in sys.argv:
         if return_probs:
             probs, ids = llama_pair_probabilities(texts, model, tokenizer, fixed_pos=index, return_probs=True, set_num=set_num)
             with open(args.base_path + f'results/{dataset_name}{set_num_s}_scores_{name.split("/")[-1]}_probs.npy',
@@ -935,7 +880,7 @@ def on_data_calibration(dataset_name='wikitext-2', size="small", version="", ret
     ranks = "_ranks" if "ranks" in sys.argv else ""
     with open(args.base_path + f'results/{dataset_name}{set_num_s}_scores_{name.split("/")[-1]}'
               f'{"_deps" if deps else ""}{"_deps2" if deps2 else ""}{"_l1_2" if l1_2 else ""}{"_l2_1" if l2_1 else ""}'
-              f'{"_u" if use_underscore else "_"}{na}{ranks}.json', 'w') as outfile:
+              f'{na}{ranks}.json', 'w') as outfile:
         json.dump(pp, outfile)
     on_data_evaluation(pp, max_ent=np.log(len(tokenizer.vocab)))
 
@@ -1053,43 +998,11 @@ def on_data_evaluation(pp, max_ent=11., cutoffs=None, high_H=False):
         print(len(pp_ent0), len(pp_ent1))
         if len(pp_ent0) > 0 and len(pp_ent1) > 0:
             print_by_cond(pp_ent0, pp_ent1, name0="H_w1 >= H_w2", name1="H_w1 < H_w2")
-            # print("AVG p12, p21 for cases H_w1 > H_w2, H_w1 < H_w2:")
-            # p12_ent0 = sum([p[1] for p in pp_ent0]) / len(pp_ent0)
-            # p21_ent0 = sum([p[2] for p in pp_ent0]) / len(pp_ent0)
-            # p12_ent1 = sum([p[1] for p in pp_ent1]) / len(pp_ent1)
-            # p21_ent1 = sum([p[2] for p in pp_ent1]) / len(pp_ent1)
-            # print(p12_ent0, p21_ent0, p12_ent1, p21_ent1)
-            # print("AVG p12 - p21 for cases H_w1 < H_w2, H_w1 < H_w2:")
-            # p_ent0 = sum([p[1] - p[2] for p in pp_ent0]) / len(pp_ent0)
-            # p_ent1 = sum([p[1] - p[2] for p in pp_ent1]) / len(pp_ent1)
-            # print(p_ent0, p_ent1)
-            # count0 = len([p for p in pp_ent0 if p[1] > p[2]]) / len(pp_ent0)
-            # count1 = len([p for p in pp_ent1 if p[1] > p[2]]) / len(pp_ent1)
-            # print("Count (p12 > p21) for case H_w1 > H_w2:")
-            # print(count0)
-            # print("Count (p12 > p21) for case H_w1 < H_w2:")
-            # print(count1)
 
         print("\nlens for cases H_w2|1 > H_w1|2, H_w2|1 < H_w1|2:")
         print(len(pp_ent0_c), len(pp_ent1_c))
         if len(pp_ent0_c) > 0 and len(pp_ent1_c) > 0:
             print_by_cond(pp_ent0_c, pp_ent1_c, name0="H_w2|1 >= H_w1|2", name1="H_w2|1 < H_w1|2",)
-            # print("AVG p12, p21 for cases H_w1 > H_w2, H_w1 < H_w2:")
-            # p12_ent0_c = sum([p[1] for p in pp_ent0_c]) / len(pp_ent0_c)
-            # p21_ent0_c = sum([p[2] for p in pp_ent0_c]) / len(pp_ent0_c)
-            # p12_ent1_c = sum([p[1] for p in pp_ent1_c]) / len(pp_ent1_c)
-            # p21_ent1_c = sum([p[2] for p in pp_ent1_c]) / len(pp_ent1_c)
-            # print(p12_ent0_c, p21_ent0_c, p12_ent1_c, p21_ent1_c)
-            # print("AVG p12 - p21 for cases H_w2|1 < H_w1|2, H_w2|1 < H_w1|2:")
-            # p_ent0_c = sum([p[1] - p[2] for p in pp_ent0_c]) / len(pp_ent0_c)
-            # p_ent1_c = sum([p[1] - p[2] for p in pp_ent1_c]) / len(pp_ent1_c)
-            # print(p_ent0_c, p_ent1_c)
-            # count0_c = len([p for p in pp_ent0_c if p[1] > p[2]]) / len(pp_ent0_c)
-            # count1_c = len([p for p in pp_ent1_c if p[1] > p[2]]) / len(pp_ent1_c)
-            # print("Count (p12 > p21) for case H_w2|1 > H_w1|2:")
-            # print(count0_c)
-            # print("Count (p12 > p21) for case H_w2|1 < H_w1|2:")
-            # print(count1_c)
 
         print("\nlens for for cases H_w1 > H_w2, H_w1 < H_w2, for each one two cases, H_w2|1 > H_w1|2, H_w2|1 < H_w1|2:")
         print(len(pp_ent0_0), len(pp_ent0_1), len(pp_ent1_0), len(pp_ent1_1))
@@ -1123,36 +1036,6 @@ def on_data_evaluation(pp, max_ent=11., cutoffs=None, high_H=False):
         print(len(pp_ent12), len(pp_ent21))
         if len(pp_ent12) > 0 and len(pp_ent21) > 0:
             print_by_cond(pp_ent12, pp_ent21, name0="H_w12 >= H_w21", name1="H_w12 < H_w21")
-            # print("AVG p12, p21 for H_w12 >= H_w21 and then for H_w12 < H_w21:")
-            # p12_ent12 = sum([p[1] for p in pp_ent12]) / len(pp_ent12)
-            # p21_ent12 = sum([p[2] for p in pp_ent12]) / len(pp_ent12)
-            # p12_ent21 = sum([p[1] for p in pp_ent21]) / len(pp_ent21)
-            # p21_ent21 = sum([p[2] for p in pp_ent21]) / len(pp_ent21)
-            # print(p12_ent12, p21_ent12, p12_ent21, p21_ent21)
-            # print("AVG p12 - p21 for cases H_w12 >= H_w21, H_w12 < H_w21:")
-            # p_ent12 = sum([p[1] - p[2] for p in pp_ent12]) / len(pp_ent12)
-            # p_ent21 = sum([p[1] - p[2] for p in pp_ent21]) / len(pp_ent21)
-            # print(p_ent12, p_ent21)
-            # print("Random AVG p12 - p21 for cases H_w12 >= H_w21, H_w12 < H_w21:")
-            # p1s, p2s = np.array([p[1] for p in pp_ent12]), np.array([p[2] for p in pp_ent12])
-            # np.random.shuffle(p2s)
-            # r_p_ent12 = sum(p1s - p2s) / len(p1s)
-            # r_count12 = sum(p1s > p2s) / len(p1s)
-            # p1s, p2s = np.array([p[1] for p in pp_ent21]), np.array([p[2] for p in pp_ent21])
-            # np.random.shuffle(p2s)
-            # r_p_ent21 = sum(p1s - p2s) / len(p1s)
-            # r_count21 = sum(p1s > p2s) / len(p1s)
-            # print(r_p_ent12, r_p_ent21)
-            # count12 = len([p for p in pp_ent12 if p[1] > p[2]]) / len(pp_ent12)
-            # count21 = len([p for p in pp_ent21 if p[1] > p[2]]) / len(pp_ent21)
-            # print("Count (p12 > p21) for case H_w12 >= H_w21:")
-            # print(count12)
-            # print("Count (p12 > p21) for case H_w12 < H_w21:")
-            # print(count21)
-            # print("Random Count (p12 > p21) for case H_w12 >= H_w21:")
-            # print(r_count12)
-            # print("Random Count (p12 > p21) for case H_w12 < H_w21:")
-            # print(r_count21)
 
         if high_H:
             print("\nlens for cases H_w12_h >= H_w21_h, H_w12_h < H_w21_h:")
@@ -1170,22 +1053,6 @@ def on_data_evaluation(pp, max_ent=11., cutoffs=None, high_H=False):
         print(len(pp_ent_l), len(pp_ent_s))
         if len(pp_ent_l) > 0 and len(pp_ent_s) > 0:
             print_by_cond(pp_ent_l, pp_ent_s, name0="H_w >= AvgH_w", name1="H_w < AvgH_w")
-            # print("AVG p12, p21 for H_w >= AvgH_w and then for H_w < AvgH_w:")
-            # p12_ent_l = sum([p[1] for p in pp_ent_l]) / len(pp_ent_l)
-            # p21_ent_l = sum([p[2] for p in pp_ent_l]) / len(pp_ent_l)
-            # p12_ent_s = sum([p[1] for p in pp_ent_s]) / len(pp_ent_s)
-            # p21_ent_s = sum([p[2] for p in pp_ent_s]) / len(pp_ent_s)
-            # print(p12_ent_l, p21_ent_l, p12_ent_s, p21_ent_s)
-            # print("AVG p12 - p21 for cases H_w >= AvgH_w, H_w < AvgH_w:")
-            # p_ent_l = sum([p[1] - p[2] for p in pp_ent_l]) / len(pp_ent_l)
-            # p_ent_s = sum([p[1] - p[2] for p in pp_ent_s]) / len(pp_ent_s)
-            # print(p_ent_l, p_ent_s)
-            # count_l = len([p for p in pp_ent_l if p[1] > p[2]]) / len(pp_ent_l)
-            # count_s = len([p for p in pp_ent_s if p[1] > p[2]]) / len(pp_ent_s)
-            # print("Count (p12 > p21) for case H_w >= AvgH_w:")
-            # print(count_l)
-            # print("Count (p12 > p21) for case H_w < AvgH_w:")
-            # print(count_s)
 
         pp_ent_1 = [p for p in pp if (p[4][0] + p[4][3] + p[4][1] + p[4][2]) / 4 <= Hs_cutoff1]
         pp_ent_2 = [p for p in pp if Hs_cutoff1 < (p[4][0] + p[4][3] + p[4][1] + p[4][2]) / 4 <= Hs_cutoff2]
@@ -1405,6 +1272,7 @@ def llama_entropies(texts, model, tokenizer):
         all_entropies.append(entropies)
     return all_entropies
 
+
 def pair_probabilities(texts, model, tokenizer, temperature=1., deps=False, deps2=False):
     """
     Measures probabilities for adjacent token pairs in the given texts
@@ -1592,18 +1460,12 @@ def pair_probabilities(texts, model, tokenizer, temperature=1., deps=False, deps
 
 def pair_probabilities2(texts, model, tokenizer, temperature=1., deps=False):
     """
-    Measures probabilities for adjacent token pairs in the given texts
+    Measures probabilities for adjacent token pairs in the given texts. For llama and flan
     :param texts: list of strings
     :param model:
     :param tokenizer:
     :return:
     """
-    print("using new method - different decoding order")
-    print("sorted the extra ids in reverse order")
-    print("fixed the is_skip function")
-    print("fixed the underscore and r_inputs")
-    print("using restrictions for deps3")
-    print("doing without end token")
     skip_word = "skip_word" in sys.argv
     l1_2 = "l1_2" in sys.argv
     l2_1 = "l2_1" in sys.argv
@@ -1655,8 +1517,6 @@ def pair_probabilities2(texts, model, tokenizer, temperature=1., deps=False):
             if deps and deps3:
                 if is_skip(i, j) or not is_skip3(i, j):
                     continue
-                # if inputs['input_ids'][0, i].item() != inputs['input_ids'][0, j].item():
-                #     continue
                 if tokenizer.convert_ids_to_tokens(inputs['input_ids'][0, i].item())[0] != underscore_str or \
                         tokenizer.convert_ids_to_tokens(inputs['input_ids'][0, j].item())[0] != underscore_str:
                     continue
@@ -1675,10 +1535,6 @@ def pair_probabilities2(texts, model, tokenizer, temperature=1., deps=False):
             labels = torch.full_like(inputs2['input_ids'], -100)
             r_labels = torch.full_like(inputs2['input_ids'], -100)
             if not l1_2 and not l2_1:
-                # labels[0, :8] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, i].item(), underscore, extra_ids[1],
-                #                               inputs2['input_ids'][0, j].item(), underscore, extra_ids[2], 1])
-                # r_labels[0, :8] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, j].item(), underscore, extra_ids[1],
-                #                                 inputs2['input_ids'][0, i].item(), underscore, extra_ids[2], 1])
                 labels[0, :8] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, i].item(), underscore, extra_ids[1],
                                               inputs2['input_ids'][0, j].item(), underscore, extra_ids[2], -100])
                 r_labels[0, :8] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, j].item(), underscore, extra_ids[1],
@@ -1708,15 +1564,6 @@ def pair_probabilities2(texts, model, tokenizer, temperature=1., deps=False):
                 r_inputs2['input_ids'] = torch.clone(inputs2.input_ids)
                 r_inputs2['input_ids'][0, i+1] = extra_ids[1]
                 r_inputs2['input_ids'][0, j+2] = extra_ids[0]
-                #
-                # inputs2['input_ids'][0, i] = extra_ids[0]
-                # inputs2['input_ids'][0, j] = extra_ids[1]
-                # inputs2['input_ids'][0, j+1: -1] = inputs['input_ids'][0, j+2:]
-                # inputs2['input_ids'][0, -1] = tokenizer.pad_token_id
-                # r_inputs2['input_ids'][0, i] = extra_ids[1]
-                # r_inputs2['input_ids'][0, j] = extra_ids[0]
-                # r_inputs2['input_ids'][0, j: -1] = inputs['input_ids'][0, j+1:]
-                # r_inputs2['input_ids'][0, -1] = tokenizer.pad_token_id
             elif l2_1:
                 labels[0, :9] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, i].item(),
                                               inputs2['input_ids'][0, i+1].item(), underscore, extra_ids[1],
@@ -1733,16 +1580,6 @@ def pair_probabilities2(texts, model, tokenizer, temperature=1., deps=False):
                 r_inputs2['input_ids'] = torch.clone(inputs2.input_ids)
                 r_inputs2['input_ids'][0, i+1] = extra_ids[1]
                 r_inputs2['input_ids'][0, j+1] = extra_ids[0]
-                # inputs2['input_ids'][0, j] = extra_ids[1]
-                # inputs2['input_ids'][0, i] = extra_ids[0]
-                # # inputs2['input_ids'][0, i+1: -1] = inputs2['input_ids'][0, i+2:]
-                # inputs2['input_ids'][0, :-1] = torch.cat([inputs2['input_ids'][0, :i+1], inputs2['input_ids'][0, i+2:]])
-                # inputs2['input_ids'][0, -1] = tokenizer.pad_token_id
-                # r_inputs2['input_ids'][0, j] = extra_ids[0]
-                # r_inputs2['input_ids'][0, i] = extra_ids[1]
-                # # r_inputs2['input_ids'][0, i+1: -1] = r_inputs2['input_ids'][0, i+2:]
-                # r_inputs2['input_ids'][0, :-1] = torch.cat([r_inputs2['input_ids'][0, :i+1], r_inputs2['input_ids'][0, i+2:]])
-                # r_inputs2['input_ids'][0, -1] = tokenizer.pad_token_id
             with torch.no_grad():
                 out = model(**inputs2.to(dev), labels=labels.to(dev))
                 r_out = model(**r_inputs2.to(dev), labels=r_labels.to(dev))
@@ -1751,13 +1588,7 @@ def pair_probabilities2(texts, model, tokenizer, temperature=1., deps=False):
 
             logits = out.logits / temperature
             r_logits = r_out.logits / temperature
-            # probs = logits.log_softmax(dim=-1).cpu().numpy()
             if not l1_2 and not l2_1:
-                # TODO: does this actually represent language modeling??
-                # _p12 = -out.loss * 8
-                # _p21 = -r_out.loss * 8
-                # _p12x = -out_x.loss * 8
-                # _p21x = -r_out_x.loss * 8
                 _p12 = -out.loss * 2
                 _p21 = -r_out.loss * 2
                 _p12x = -out_x.loss * 2
@@ -1768,7 +1599,6 @@ def pair_probabilities2(texts, model, tokenizer, temperature=1., deps=False):
                 _p12x = -out_x.loss * 9
                 _p21x = -r_out_x.loss * 9
             l.append((float(_p12), float(_p12), float(_p21), [id1.item(), id2.item()], [0., 0., 0., 0.], [ti, i], float(_p12x), float(_p21x)))
-            # l.append((float(_pair_prob), float(_p12), float(_p21), [tokenizer.decode(id1.item()), tokenizer.decode(id2.item())], entropies))
     return l
 
 def pair_probabilities3(texts, model, tokenizer, temperature=1., deps=False):
@@ -2086,9 +1916,7 @@ def llama_pair_probabilities(texts, model, tokenizer, fixed_pos=None, return_pro
     print("Using entropy sum")
     print("Fixed a lot in the flan case")
 
-    # what about spaces???
     if "llama" not in sys.argv:
-        # maybe use # instead??
         extra_ids = tokenizer.convert_tokens_to_ids(["%", "@"])  # extra_ids[0] is the one to predict
         if "other_prompt2" in sys.argv:
             extra_ids = tokenizer.convert_tokens_to_ids(["^", "$"])  # extra_ids[0] is the one to predict
@@ -2096,7 +1924,6 @@ def llama_pair_probabilities(texts, model, tokenizer, fixed_pos=None, return_pro
         extra_ids = tokenizer("%")["input_ids"][1], tokenizer("@")["input_ids"][1]  # extra_ids[0] is the one to predict
         if "other_prompt2" in sys.argv:
             extra_ids = tokenizer("^")["input_ids"][1], tokenizer("$")["input_ids"][1]  # extra_ids[0] is the one to predict
-        # space_id = tokenizer(" %")["input_ids"][1]
     print("Extra_ids:")
     print(extra_ids)
     l = []
@@ -2148,14 +1975,9 @@ def llama_pair_probabilities(texts, model, tokenizer, fixed_pos=None, return_pro
                     return True
 
             def is_skip(i, j, all_tags=False):
-                # if t2st[i] is None or t2st[j] is None:  # covers token that are not full words
-                #     return False
                 return t2st[i][0].head.i == t2st[j][0].i and t2st[j][0].i > t2st[i][0].i and \
                        t2st[i][0].n_rights + t2st[i][0].n_lefts == 0 and (all_tags or t2st[i][0].dep_ in dep_tags)
         if fixed_pos is None:
-            # if first:
-            #     print(text)
-            #     first = False
             if "non_ascii" in sys.argv:
                 if len(text) < 100 or text.isascii() or len(text) > 10000:
                     continue
@@ -2167,16 +1989,12 @@ def llama_pair_probabilities(texts, model, tokenizer, fixed_pos=None, return_pro
 
             new_fixed_pos = len(inputs["input_ids"][0]) - tail_len - text_len + 1
             token_range = range(new_fixed_pos, new_fixed_pos + text_len - 3)
-            # token_range = range(1, len(inputs.input_ids[0]) - 4)
-        # elif "flan" not in sys.argv:
         else:
             inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
             inputs2 = BatchEncoding(inputs)
             # inputs3 = BatchEncoding(inputs)
             new_fixed_pos = len(inputs["input_ids"][0]) - tail_len - text_len + fixed_pos
             token_range = range(new_fixed_pos, new_fixed_pos+1)
-        # else:
-        #     token_range = range(fixed_pos, fixed_pos+1)
 
         for i in token_range:
             dep = None
@@ -2192,7 +2010,6 @@ def llama_pair_probabilities(texts, model, tokenizer, fixed_pos=None, return_pro
                 elif deps and not deps3 and not is_skip(i, j):
                     continue
                 t_ii = t2st[i][0].i
-            # if (fixed_pos is None or "flan" not in sys.argv) and is_skip(i, j, all_tags=False):
             if not is_stop(i, j) and is_skip(i, j, all_tags=True):
                 dep = t2st[i][0].dep_
             # TODO: batchify
@@ -2205,10 +2022,7 @@ def llama_pair_probabilities(texts, model, tokenizer, fixed_pos=None, return_pro
                     else:
                         n_text = text.replace(o_text, " ".join(["%"] + o_text.split()[1:]))
                     inputs2 = tokenizer(n_text, return_tensors="pt", padding=True, truncation=True)
-                    # labels = tokenizer(f": {o_text.split()[0]}", return_tensors="pt", padding=True, truncation=True)["input_ids"]
                     labels = tokenizer(f" {o_text.split()[0]}", return_tensors="pt", padding=True, truncation=True)["input_ids"]
-                    # i = ((inputs2["input_ids"][0] == extra_ids[0]).nonzero(as_tuple=True)[0][-1])
-                    # j = i + 1
                 else:
                     if "other_prompt2" in sys.argv:
                         n_text = text[:t2st[i].start_char] + "^" + text[t2st[i].end_char:]
@@ -2216,11 +2030,6 @@ def llama_pair_probabilities(texts, model, tokenizer, fixed_pos=None, return_pro
                         n_text = text[:t2st[i].start_char] + "%" + text[t2st[i].end_char:]
                     inputs2 = tokenizer(n_text, return_tensors="pt", padding=True, truncation=True)
                     labels = tokenizer(t2st[i].text, return_tensors="pt", padding=True, truncation=True)["input_ids"]
-
-                    # inputs2['input_ids'] = torch.clone(inputs.input_ids)
-                    # # labels = torch.tensor([colon_id, inputs2['input_ids'][0, i].item(), tokenizer.eos_token_id]).unsqueeze(0)
-                    # labels = torch.tensor([inputs2['input_ids'][0, i].item(), tokenizer.eos_token_id]).unsqueeze(0)
-                    # inputs2['input_ids'][0, i] = extra_ids[0]
             else:
                 _labels = torch.tensor([inputs['input_ids'][0, i].item(), tokenizer.eos_token_id]).unsqueeze(0)
                 inputs2['input_ids'] = torch.cat([torch.clone(inputs.input_ids)[:, :-1], _labels], dim=1)
@@ -2240,7 +2049,6 @@ def llama_pair_probabilities(texts, model, tokenizer, fixed_pos=None, return_pro
                         s_text[1] = "%"
                     n_text = text.replace(o_text, " ".join(s_text))
                     inputs2 = tokenizer(n_text, return_tensors="pt", padding=True, truncation=True)
-                    # labels = tokenizer(f": {o_text.split()[1]}", return_tensors="pt", padding=True, truncation=True)["input_ids"]
                     labels = tokenizer(f" {o_text.split()[1]}", return_tensors="pt", padding=True, truncation=True)["input_ids"]
                 else:
                     if "other_prompt2" in sys.argv:
@@ -2249,10 +2057,6 @@ def llama_pair_probabilities(texts, model, tokenizer, fixed_pos=None, return_pro
                         n_text = text[:t2st[j].start_char] + "@" + text[t2st[j].end_char:]
                     inputs2 = tokenizer(n_text, return_tensors="pt", padding=True, truncation=True)
                     labels = tokenizer(t2st[j].text, return_tensors="pt", padding=True, truncation=True)["input_ids"]
-
-                    # inputs2['input_ids'] = torch.clone(inputs.input_ids)
-                    # labels = torch.tensor([inputs2['input_ids'][0, j].item(), tokenizer.eos_token_id]).unsqueeze(0)
-                    # inputs2['input_ids'][0, j] = extra_ids[0]
             else:
                 _labels = torch.tensor([inputs['input_ids'][0, j].item(), tokenizer.eos_token_id]).unsqueeze(0)
                 inputs2['input_ids'] = torch.cat([torch.clone(inputs.input_ids)[:, :-1], _labels], dim=1)
@@ -2274,7 +2078,6 @@ def llama_pair_probabilities(texts, model, tokenizer, fixed_pos=None, return_pro
                         s_text[1] = "@"
                     n_text = text.replace(o_text, " ".join(s_text))
                     inputs2 = tokenizer(n_text, return_tensors="pt", padding=True, truncation=True)
-                    # labels = tokenizer(f": {o_text.split()[0]}", return_tensors="pt", padding=True, truncation=True)["input_ids"]
                     labels = tokenizer(f" {o_text.split()[0]}", return_tensors="pt", padding=True, truncation=True)["input_ids"]
                 else:
                     if "other_prompt2" in sys.argv:
@@ -2283,12 +2086,6 @@ def llama_pair_probabilities(texts, model, tokenizer, fixed_pos=None, return_pro
                         n_text = text[:t2st[i].start_char] + "% @" + text[t2st[j].end_char:]
                     inputs2 = tokenizer(n_text, return_tensors="pt", padding=True, truncation=True)
                     labels = tokenizer(t2st[i].text, return_tensors="pt", padding=True, truncation=True)["input_ids"]
-
-                    # inputs2['input_ids'] = torch.clone(inputs.input_ids)
-                    # # labels = torch.tensor([colon_id, inputs2['input_ids'][0, i].item(), tokenizer.eos_token_id]).unsqueeze(0)
-                    # labels = torch.tensor([inputs2['input_ids'][0, i].item(), tokenizer.eos_token_id]).unsqueeze(0)
-                    # inputs2['input_ids'][0, i] = extra_ids[0]
-                    # inputs2['input_ids'][0, j] = extra_ids[1]
             else:
                 _labels = torch.tensor([inputs['input_ids'][0, i].item(), tokenizer.eos_token_id]).unsqueeze(0)
                 inputs2['input_ids'] = torch.cat([torch.clone(inputs.input_ids)[:, :-1], _labels], dim=1)
@@ -2310,7 +2107,6 @@ def llama_pair_probabilities(texts, model, tokenizer, fixed_pos=None, return_pro
                         s_text[1] = "%"
                     n_text = text.replace(o_text, " ".join(s_text))
                     inputs2 = tokenizer(n_text, return_tensors="pt", padding=True, truncation=True)
-                    # labels = tokenizer(f": {o_text.split()[0]}", return_tensors="pt", padding=True, truncation=True)["input_ids"]
                     labels = tokenizer(f" {o_text.split()[0]}", return_tensors="pt", padding=True, truncation=True)["input_ids"]
                 else:
                     if "other_prompt2" in sys.argv:
@@ -2319,12 +2115,6 @@ def llama_pair_probabilities(texts, model, tokenizer, fixed_pos=None, return_pro
                         n_text = text[:t2st[i].start_char] + "% @" + text[t2st[j].end_char:]
                     inputs2 = tokenizer(n_text, return_tensors="pt", padding=True, truncation=True)
                     labels = tokenizer(t2st[j].text, return_tensors="pt", padding=True, truncation=True)["input_ids"]
-
-                    # inputs2['input_ids'] = torch.clone(inputs.input_ids)
-                    # # labels = torch.tensor([colon_id, inputs2['input_ids'][0, j].item(), tokenizer.eos_token_id]).unsqueeze(0)
-                    # labels = torch.tensor([inputs2['input_ids'][0, j].item(), tokenizer.eos_token_id]).unsqueeze(0)
-                    # inputs2['input_ids'][0, i] = extra_ids[1]
-                    # inputs2['input_ids'][0, j] = extra_ids[0]
             else:
                 _labels = torch.tensor([inputs['input_ids'][0, j].item(), tokenizer.eos_token_id]).unsqueeze(0)
                 inputs2['input_ids'] = torch.cat([torch.clone(inputs.input_ids)[:, :-1], _labels], dim=1)
@@ -2333,7 +2123,6 @@ def llama_pair_probabilities(texts, model, tokenizer, fixed_pos=None, return_pro
                 inputs2['input_ids'][0, j] = extra_ids[0]
                 labels[0, :-2] = -100
             with torch.no_grad():
-                # out3_b = model(**inputs2.to(dev), labels=labels_b.to(dev))
                 out3_b = model(inputs2['input_ids'].to(dev), labels=labels.to(dev))
 
             # entropies of: w1 only, w2 only, w1|w2, w2|w1
@@ -2347,12 +2136,6 @@ def llama_pair_probabilities(texts, model, tokenizer, fixed_pos=None, return_pro
                     _ranks = (-out3_a.logits[0, -2]).cpu().numpy().argsort().argsort()
                     _ranks1 = (-out.logits[0, -2]).cpu().numpy().argsort().argsort()
                     _ranks2 = (-out3_a.logits[0, -1]).cpu().numpy().argsort().argsort()
-                    # print(len(_ranks))
-                    # print(eos_id)
-                    # print(inputs['input_ids'][0, i].item())
-                    # _ = _ranks2[eos_id]
-                    # _ = _ranks[inputs['input_ids'][0, i].item()]
-                    # _ = _ranks1[inputs['input_ids'][0, j].item()]
                     ranks = [int(_ranks2[eos_id]), int(_ranks[inputs['input_ids'][0, i].item()]), int(_ranks1[inputs['input_ids'][0, j].item()]), len(_ranks)]
 
                 if return_probs:
@@ -2651,7 +2434,6 @@ def test_top(dataset_name="new_news", size="small", version=""):
     l1_2 = "l1_2" in sys.argv
     l2_1 = "l2_1" in sys.argv
     deps3 = "deps3" in sys.argv
-    use_underscore = "use_underscore" in sys.argv
 
     if "t5" in sys.argv:
         name = f"t5-{size}"
@@ -2692,7 +2474,7 @@ def test_top(dataset_name="new_news", size="small", version=""):
     underscore_str = '▁'
 
     with open(args.base_path + f'results/{dataset_name}_scores_{name.split("/")[-1]}'
-              f'{"_deps" if deps else ""}{"_l1_2" if l1_2 else ""}{"_l2_1" if l2_1 else ""}{"_u" if use_underscore else "_"}.json', 'r') as infile:
+              f'{"_deps" if deps else ""}{"_l1_2" if l1_2 else ""}{"_l2_1" if l2_1 else ""}.json', 'r') as infile:
         ppt5=json.load(infile)
     dict_t5_v11 = {"p_i":[_pp[0] for _pp in ppt5],
         "p12":[_pp[1] for _pp in ppt5],
@@ -2734,93 +2516,45 @@ def test_top(dataset_name="new_news", size="small", version=""):
             labels = torch.full_like(inputs2['input_ids'], -100)
             r_labels = torch.full_like(inputs2['input_ids'], -100)
             if not l1_2 and not l2_1:
-                if use_underscore:
-                    labels[0, :8] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, i].item(), underscore, extra_ids[1],
-                                                  inputs2['input_ids'][0, j].item(), underscore, extra_ids[2], -100])
-                    r_labels[0, :8] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, j].item(), underscore, extra_ids[1],
-                                                    inputs2['input_ids'][0, i].item(), underscore, extra_ids[2], -100])
-                    inputs2['input_ids'][0, j + 3:] = inputs['input_ids'][0, j + 1:-2]
-                    inputs2['input_ids'][0, i] = underscore
-                    inputs2['input_ids'][0, i + 1] = extra_ids[0]
-                    inputs2['input_ids'][0, i + 2] = inputs['input_ids'][0, i + 1]
-                    inputs2['input_ids'][0, j + 1] = underscore
-                    inputs2['input_ids'][0, j + 2] = extra_ids[1]
-                    r_inputs2['input_ids'] = torch.clone(inputs2.input_ids)
-                    r_inputs2['input_ids'][0, i + 1] = extra_ids[1]
-                    r_inputs2['input_ids'][0, j + 2] = extra_ids[0]
-                else:
-                    labels[0, :6] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, i].item(), extra_ids[1],
-                                                  inputs2['input_ids'][0, j].item(), extra_ids[2], -100])
-                    r_labels[0, :6] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, j].item(), extra_ids[1],
-                                                    inputs2['input_ids'][0, i].item(), extra_ids[2], -100])
-                    inputs2['input_ids'][0, i] = extra_ids[0]
-                    inputs2['input_ids'][0, j] = extra_ids[1]
-                    r_inputs2['input_ids'] = torch.clone(inputs2.input_ids)
-                    r_inputs2['input_ids'][0, i] = extra_ids[1]
-                    r_inputs2['input_ids'][0, j] = extra_ids[0]
+                labels[0, :6] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, i].item(), extra_ids[1],
+                                              inputs2['input_ids'][0, j].item(), extra_ids[2], -100])
+                r_labels[0, :6] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, j].item(), extra_ids[1],
+                                                inputs2['input_ids'][0, i].item(), extra_ids[2], -100])
+                inputs2['input_ids'][0, i] = extra_ids[0]
+                inputs2['input_ids'][0, j] = extra_ids[1]
+                r_inputs2['input_ids'] = torch.clone(inputs2.input_ids)
+                r_inputs2['input_ids'][0, i] = extra_ids[1]
+                r_inputs2['input_ids'][0, j] = extra_ids[0]
             elif l1_2:
-                if use_underscore:
-                    labels[0, :9] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, i].item(), underscore, extra_ids[1],
-                                                  inputs2['input_ids'][0, j].item(), inputs2['input_ids'][0, j + 1].item(),
-                                                  underscore, extra_ids[2], 1])
-                    r_labels[0, :9] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, j].item(),
-                                                    inputs2['input_ids'][0, j + 1].item(), underscore, extra_ids[1],
-                                                    inputs2['input_ids'][0, i].item(),
-                                                    underscore, extra_ids[2], 1])
-                    inputs2['input_ids'][0, j + 3:] = inputs['input_ids'][0, j + 2:-1]
-                    inputs2['input_ids'][0, i] = underscore
-                    inputs2['input_ids'][0, i + 1] = extra_ids[0]
-                    inputs2['input_ids'][0, i + 2] = inputs['input_ids'][0, i + 1]
-                    inputs2['input_ids'][0, j + 1] = underscore
-                    inputs2['input_ids'][0, j + 2] = extra_ids[1]
-                    r_inputs2['input_ids'] = torch.clone(inputs2.input_ids)
-                    r_inputs2['input_ids'][0, i + 1] = extra_ids[1]
-                    r_inputs2['input_ids'][0, j + 2] = extra_ids[0]
-                else:
-                    labels[0, :7] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, i].item(), extra_ids[1],
-                                                  inputs2['input_ids'][0, j].item(),
-                                                  inputs2['input_ids'][0, j + 1].item(),
-                                                  extra_ids[2], -100])
-                    r_labels[0, :7] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, j].item(),
-                                                    inputs2['input_ids'][0, j + 1].item(), extra_ids[1],
-                                                    inputs2['input_ids'][0, i].item(),
-                                                    extra_ids[2], -100])
-                    inputs2['input_ids'][0, j + 1:-1] = inputs['input_ids'][0, j + 2:]
-                    inputs2['input_ids'][0, i] = extra_ids[0]
-                    inputs2['input_ids'][0, j] = extra_ids[1]
-                    r_inputs2['input_ids'] = torch.clone(inputs2.input_ids)
-                    r_inputs2['input_ids'][0, i] = extra_ids[1]
-                    r_inputs2['input_ids'][0, j] = extra_ids[0]
+
+                labels[0, :7] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, i].item(), extra_ids[1],
+                                              inputs2['input_ids'][0, j].item(),
+                                              inputs2['input_ids'][0, j + 1].item(),
+                                              extra_ids[2], -100])
+                r_labels[0, :7] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, j].item(),
+                                                inputs2['input_ids'][0, j + 1].item(), extra_ids[1],
+                                                inputs2['input_ids'][0, i].item(),
+                                                extra_ids[2], -100])
+                inputs2['input_ids'][0, j + 1:-1] = inputs['input_ids'][0, j + 2:]
+                inputs2['input_ids'][0, i] = extra_ids[0]
+                inputs2['input_ids'][0, j] = extra_ids[1]
+                r_inputs2['input_ids'] = torch.clone(inputs2.input_ids)
+                r_inputs2['input_ids'][0, i] = extra_ids[1]
+                r_inputs2['input_ids'][0, j] = extra_ids[0]
             elif l2_1:
-                if use_underscore:
-                    labels[0, :9] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, i].item(),
-                                                  inputs2['input_ids'][0, i + 1].item(), underscore, extra_ids[1],
-                                                  inputs2['input_ids'][0, j].item(), underscore, extra_ids[2], 1])
-                    r_labels[0, :9] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, j].item(), underscore, extra_ids[1],
-                                                    inputs2['input_ids'][0, i].item(), inputs2['input_ids'][0, i + 1].item(),
-                                                    underscore, extra_ids[2], 1])
-                    inputs2['input_ids'][0, j + 2:] = inputs['input_ids'][0, j + 1:-1]
-                    inputs2['input_ids'][0, i] = underscore
-                    inputs2['input_ids'][0, i + 1] = extra_ids[0]
-                    inputs2['input_ids'][0, j] = underscore
-                    inputs2['input_ids'][0, j + 1] = extra_ids[1]
-                    r_inputs2['input_ids'] = torch.clone(inputs2.input_ids)
-                    r_inputs2['input_ids'][0, i + 1] = extra_ids[1]
-                    r_inputs2['input_ids'][0, j + 1] = extra_ids[0]
-                else:
-                    labels[0, :7] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, i].item(),
-                                                  inputs2['input_ids'][0, i + 1].item(), extra_ids[1],
-                                                  inputs2['input_ids'][0, j].item(), extra_ids[2], -100])
-                    r_labels[0, :7] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, j].item(), extra_ids[1],
-                                                    inputs2['input_ids'][0, i].item(),
-                                                    inputs2['input_ids'][0, i + 1].item(),
-                                                    extra_ids[2], -100])
-                    inputs2['input_ids'][0, i + 1:-1] = inputs['input_ids'][0, i + 2:]
-                    inputs2['input_ids'][0, i] = extra_ids[0]
-                    inputs2['input_ids'][0, j - 1] = extra_ids[1]
-                    r_inputs2['input_ids'] = torch.clone(inputs2.input_ids)
-                    r_inputs2['input_ids'][0, i] = extra_ids[1]
-                    r_inputs2['input_ids'][0, j - 1] = extra_ids[0]
+                labels[0, :7] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, i].item(),
+                                              inputs2['input_ids'][0, i + 1].item(), extra_ids[1],
+                                              inputs2['input_ids'][0, j].item(), extra_ids[2], -100])
+                r_labels[0, :7] = torch.tensor([extra_ids[0], inputs2['input_ids'][0, j].item(), extra_ids[1],
+                                                inputs2['input_ids'][0, i].item(),
+                                                inputs2['input_ids'][0, i + 1].item(),
+                                                extra_ids[2], -100])
+                inputs2['input_ids'][0, i + 1:-1] = inputs['input_ids'][0, i + 2:]
+                inputs2['input_ids'][0, i] = extra_ids[0]
+                inputs2['input_ids'][0, j - 1] = extra_ids[1]
+                r_inputs2['input_ids'] = torch.clone(inputs2.input_ids)
+                r_inputs2['input_ids'][0, i] = extra_ids[1]
+                r_inputs2['input_ids'][0, j - 1] = extra_ids[0]
             with torch.no_grad():
                 out = model(**inputs2.to(dev), labels=labels.to(dev))
                 r_out = model(**r_inputs2.to(dev), labels=r_labels.to(dev))
@@ -2837,19 +2571,19 @@ def test_top(dataset_name="new_news", size="small", version=""):
             r_probs_x = r_logits_x.log_softmax(dim=-1).detach().cpu().numpy()
 
             print(tokenizer.decode(inputs2['input_ids'][0]))
-            print(tokenizer.decode(labels[0][:7 if use_underscore else 5]))
+            print(tokenizer.decode(labels[0][:5]))
             print(out.loss)
-            print(probs[0, range(8 if use_underscore else 6), labels.numpy()[0][:8 if use_underscore else 6]])
+            print(probs[0, range(6), labels.numpy()[0][:6]])
             print(tokenizer.decode(r_inputs2['input_ids'][0]))
-            print(tokenizer.decode(r_labels[0][:7 if use_underscore else 5]))
+            print(tokenizer.decode(r_labels[0][:5]))
             print(r_out.loss)
-            print(r_probs[0, range(8 if use_underscore else 6), r_labels.numpy()[0][:8 if use_underscore else 6]])
+            print(r_probs[0, range(6), r_labels.numpy()[0][:6]])
 
             print("reversing:")
             print(out_x.loss)
-            print(probs_x[0, range(8 if use_underscore else 6), labels.numpy()[0][:8 if use_underscore else 6]])
+            print(probs_x[0, range(6), labels.numpy()[0][:6]])
             print(r_out_x.loss)
-            print(r_probs_x[0, range(8 if use_underscore else 6), r_labels.numpy()[0][:8 if use_underscore else 6]])
+            print(r_probs_x[0, range(6), r_labels.numpy()[0][:6]])
 
             print("\n")
     print("\n\n")
@@ -2894,21 +2628,11 @@ def load_ranks():
 def main():
     size = "small"
     batch_size = 64
-    random = "random" in sys.argv
     topics = "topics" in sys.argv
     t_list = "t_list" in sys.argv
     single_token = "single_token" in sys.argv
-    on_data = "on_data" in sys.argv
     entropies = "entropies" in sys.argv
-    new_news = "new_news" in sys.argv
-    shuffle = "shuffle" in sys.argv
-    dataset = "wikitext-2"
-    if new_news:
-        dataset = "new_news"
-    elif "new_news2" in sys.argv:
-        dataset = "new_news2"
-    if "synthetic" in sys.argv:
-        dataset = "total_noise" if "total_noise" in sys.argv else "extra_noise" if "extra_noise" in sys.argv else "NPs" if "noise" not in sys.argv else "noise"
+    dataset = args.dataset
 
     version = ""
     if "v1_1" in sys.argv:
@@ -2919,36 +2643,9 @@ def main():
         version = "ul2"
     if "flan-ul2" in sys.argv:
         version = "flan-ul2"
-    if "base" in sys.argv:
-        size = "base"
-        batch_size = 16
-    elif "large" in sys.argv:
-        size = "large"
-        batch_size = 8
-    elif "xlarge" in sys.argv:
-        size = "xlarge"
-        batch_size = 2
-    elif "xxlarge" in sys.argv:
-        size = "xxlarge"
-        batch_size = 1
-    elif "3b" in sys.argv:
-        size = "3b"
-        batch_size = 8
-    elif "xl" in sys.argv:
-        size = "xl"
-        batch_size = 8
-    elif "11b" in sys.argv:
-        size = "11b"
-        batch_size = 2
-    elif "7b" in sys.argv:
-        size = "7b"
-        batch_size = 2
-    elif "13b" in sys.argv:
-        size = "13b"
-        batch_size = 1
-    elif "xxl" in sys.argv:
-        size = "xxl"
-        batch_size = 2
+
+    size = args.model_size
+
     if "--template" in sys.argv:
         temp = sys.argv[sys.argv.index("--template") + 1]
 
@@ -2958,16 +2655,15 @@ def main():
     if t_list:
         temperature = [0.1, 0.4, 0.7, 1., 1.5, 2, 4, 7, 10, 50, 100, 1000, 10000]
 
-    if on_data:
-        with torch.no_grad():
-            if not "synthetic" in sys.argv:
-                if "test" not in sys.argv or "ttest" in sys.argv:
-                    on_data_calibration(dataset_name=dataset, size=size, version=version)
-                if "test" in sys.argv or "ttest" in sys.argv:
-                    test_top(dataset_name=dataset, size=size, version=version)
-            else:
-                tokenizer = on_data_calibration(size=size, version=version, return_tokenizer=True)
-                on_data_calibration(dataset_name=dataset, size=size, version=version, return_tokenizer=False, tokenizer=tokenizer)
+    with torch.no_grad():
+        if not "synthetic" in sys.argv:
+            if "test" not in sys.argv or "ttest" in sys.argv:
+                on_data_calibration(dataset_name=dataset, size=size, version=version)
+            if "test" in sys.argv or "ttest" in sys.argv:
+                test_top(dataset_name=dataset, size=size, version=version)
+        else:
+            tokenizer = on_data_calibration(size=size, version=version, return_tokenizer=True)
+            on_data_calibration(dataset_name=dataset, size=size, version=version, return_tokenizer=False, tokenizer=tokenizer)
 
     if entropies:
         with torch.no_grad():
